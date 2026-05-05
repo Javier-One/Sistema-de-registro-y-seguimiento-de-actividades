@@ -626,13 +626,17 @@ function guardar(){
   const diff=(fh*60+fm)-(ih*60+im);
   if(diff<=0){toast("Hora fin debe ser mayor que hora inicio","error");return;}
   const act={id:S.nid++,personaId:pid,nombre,fecha,tipo,inicio,fin,obs,horas:parseFloat((diff/60).toFixed(1)),ts:new Date().toISOString()};
-  S.acts.push(act);save();hideM("mact");renderAll();syncSheets(act);
+  S.acts.push(act);save();hideM("mact");renderAll();
+  syncSheets(act,()=>{
+    // Recargar desde Sheets tras guardar para mantener sincronía
+    setTimeout(()=>loadFromSheets(()=>renderAll()),1500);
+  });
 }
 
 function delA(id){if(!confirm("¿Eliminar esta actividad?"))return;S.acts=S.acts.filter(a=>a.id!==id);save();renderAll();toast("Eliminada");}
 
 // ── SYNC via JSONP (evita CORS completamente) ──
-function syncSheets(act){
+function syncSheets(act,onSent){
   if(!S.url){toast("Guardado localmente. Configura la URL del Web App para sincronizar.","info");return;}
   const m=S.miembros.find(x=>x.id===act.personaId);
   setSy("sending","Enviando a Google Sheets...");
@@ -659,6 +663,7 @@ function syncSheets(act){
     setSy("ok","Enviado a Google Sheets (sin confirmación de respuesta)");
     document.getElementById("sytm").textContent=new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
     toast("Actividad registrada ✓");
+    if(onSent)onSent();
   },8000);
 
   window[cbName]=function(resp){
@@ -668,9 +673,11 @@ function syncSheets(act){
       setSy("ok","Sincronizado con Google Sheets ✓");
       document.getElementById("sytm").textContent=new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
       toast("Actividad registrada y sincronizada ✓");
+    if(onSent)onSent();
     } else {
       setSy("warn","Respuesta inesperada del servidor");
       toast("Actividad guardada localmente","info");
+      if(onSent)onSent();
     }
   };
 
@@ -694,6 +701,7 @@ function syncSheets(act){
     setSy("ok","Enviado (sin confirmación — JSONP bloqueado por el browser)");
     document.getElementById("sytm").textContent=new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
     toast("Actividad registrada ✓");
+    if(onSent)onSent();
   };
   document.head.appendChild(script);
 }
@@ -782,24 +790,66 @@ function cOut(e,id){if(e.target.id===id)hideM(id);}
 // ── TOAST ──
 function toast(msg,type="success"){const el=document.getElementById("toast");el.textContent=msg;el.className="tst show"+(type==="error"?" error":type==="info"?" info":"");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),3500);}
 
+// ── LOAD FROM SHEETS (fuente de verdad permanente) ──
+function loadFromSheets(onDone){
+  if(!S.url){if(onDone)onDone();return;}
+  setSy("sending","Cargando actividades desde Google Sheets...");
+  const cbName="load_"+Date.now();
+  const timeout=setTimeout(()=>{
+    cleanup();setSy("warn","No se pudo cargar desde Sheets — mostrando datos locales");
+    if(onDone)onDone();
+  },12000);
+  window[cbName]=function(resp){
+    clearTimeout(timeout);cleanup();
+    if(resp&&resp.status==="ok"&&Array.isArray(resp.actividades)){
+      // Convertir filas del Sheets a objetos del sistema
+      const mm={};S.miembros.forEach(m=>mm[m.nombre.toLowerCase()]=m);
+      S.acts=resp.actividades.map((r,i)=>({
+        id:parseInt(r[0])||i+1,
+        personaId:(()=>{const m=S.miembros.find(x=>x.nombre.toLowerCase()===(r[2]||"").toLowerCase());return m?m.id:0;})(),
+        nombre:r[4]||"",
+        fecha:(r[1]||"").split("T")[0]||"",
+        tipo:r[5]||"",
+        inicio:r[6]||"",
+        fin:r[7]||"",
+        horas:parseFloat(r[8])||0,
+        obs:r[10]||"",
+        ts:new Date().toISOString(),
+      })).filter(a=>a.nombre&&a.fecha);
+      S.nid=Math.max(...S.acts.map(a=>a.id),0)+1;
+      save();
+      setSy("ok","Datos cargados desde Google Sheets ✓");
+      document.getElementById("sytm").textContent=new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
+    } else {
+      setSy("warn","Sheets respondió pero sin datos — mostrando datos locales");
+    }
+    if(onDone)onDone();
+  };
+  function cleanup(){
+    try{delete window[cbName];}catch(e){}
+    const s=document.getElementById("jsonp_"+cbName);
+    if(s&&s.parentNode)s.parentNode.removeChild(s);
+  }
+  const params=new URLSearchParams({callback:cbName,action:"getActivities"});
+  const script=document.createElement("script");
+  script.id="jsonp_"+cbName;
+  script.src=S.url+"?"+params.toString();
+  script.onerror=()=>{clearTimeout(timeout);cleanup();setSy("warn","Error al cargar desde Sheets");if(onDone)onDone();};
+  document.head.appendChild(script);
+}
+
 // ── INIT ──
 document.addEventListener("DOMContentLoaded",()=>{
   load();
   document.getElementById("dchip").textContent=new Date().toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"});
   popSels();
-  if(!S.acts.length){
-    const d=hoy();
-    S.acts=[
-      {id:1,personaId:1,nombre:"Revisión de servidores de producción",fecha:d,tipo:"Proyectos",inicio:"08:00",fin:"10:00",horas:2,obs:"",ts:new Date().toISOString()},
-      {id:2,personaId:1,nombre:"Soporte ticket área contabilidad",fecha:d,tipo:"Incidencias",inicio:"10:30",fin:"11:30",horas:1,obs:"",ts:new Date().toISOString()},
-      {id:3,personaId:2,nombre:"Migración base de datos staging",fecha:d,tipo:"Proyectos",inicio:"09:00",fin:"12:00",horas:3,obs:"",ts:new Date().toISOString()},
-      {id:4,personaId:3,nombre:"Instalación software nuevo personal",fecha:d,tipo:"Soporte",inicio:"08:30",fin:"10:30",horas:2,obs:"",ts:new Date().toISOString()},
-      {id:5,personaId:4,nombre:"Documentación técnica actualizada",fecha:d,tipo:"Mejoras internas",inicio:"09:00",fin:"11:00",horas:2,obs:"",ts:new Date().toISOString()},
-      {id:6,personaId:5,nombre:"Planificación sprint Q2",fecha:d,tipo:"Proyectos",inicio:"10:00",fin:"12:00",horas:2,obs:"",ts:new Date().toISOString()},
-      {id:7,personaId:2,nombre:"Falla de red piso 3",fecha:d,tipo:"Urgencias",inicio:"14:00",fin:"15:00",horas:1,obs:"Resuelto",ts:new Date().toISOString()},
-    ];S.nid=10;save();
+  // Siempre cargar desde Sheets si hay URL configurada
+  loadFromSheets(()=>renderAll());
+  if(!S.url){
+    // Sin URL: mostrar vacío limpio (sin datos demo)
+    S.acts=[];save();
+    renderAll();
   }
-  renderAll();
 });
 </script>
 </body>
