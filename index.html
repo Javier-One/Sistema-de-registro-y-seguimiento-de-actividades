@@ -712,28 +712,33 @@ function guardar(){
 }
 
 function delA(id){
-  if(!confirm("¿Eliminar esta actividad? Esto también la eliminará de Google Sheets."))return;
+  if(!confirm("¿Eliminar esta actividad? También se eliminará del documento de Google Sheets."))return;
   const act=S.acts.find(a=>a.id===id);
   S.acts=S.acts.filter(a=>a.id!==id);
   save();renderAll();
   if(S.url && act){
     const cbName="del_"+Date.now();
-    window[cbName]=function(r){try{delete window[cbName];}catch(e){}
-      if(r&&r.status==="ok") toast("Actividad eliminada de Sheets ✓");
+    window[cbName]=function(r){
+      try{delete window[cbName];}catch(e){}
+      if(r&&r.status==="ok"){
+        toast("Actividad eliminada del Sheets ✓");
+        // Recargar para que los sheetsRow se actualicen
+        setTimeout(()=>loadFromSheets(()=>renderAll()),800);
+      } else {
+        toast("Eliminada localmente. Error en Sheets: "+(r&&r.mensaje||"desconocido"),"error");
+      }
     };
     const params=new URLSearchParams({
       callback:cbName,
-      data:JSON.stringify({action:"deleteActivity",data:{sheetsRow:act.sheetsRow,id:act.id}})
+      data:JSON.stringify({action:"deleteActivity",data:{actId:act.actId||act.id}})
     });
     const script=document.createElement("script");
     script.src=S.url+"?"+params.toString();
     document.head.appendChild(script);
-    setTimeout(()=>{try{delete window[cbName];}catch(e){}
-      const s=document.querySelector(`[src*="${cbName}"]`);
-      if(s&&s.parentNode)s.parentNode.removeChild(s);
-    },8000);
+    setTimeout(()=>{try{delete window[cbName];}catch(e){}},10000);
+  } else {
+    toast("Actividad eliminada");
   }
-  toast("Actividad eliminada");
 }
 
 function editA(id){
@@ -937,19 +942,31 @@ function loadFromSheets(onDone){
     if(resp&&resp.status==="ok"&&Array.isArray(resp.actividades)){
       // Convertir filas del Sheets a objetos del sistema
       const mm={};S.miembros.forEach(m=>mm[m.nombre.toLowerCase()]=m);
-      S.acts=resp.actividades.map((r,i)=>({
-        id:parseInt(r[0])||i+1,
-        sheetsRow:i+3, // fila real en Sheets (datos empiezan en fila 3)
-        personaId:(()=>{const m=S.miembros.find(x=>x.nombre.toLowerCase()===(r[2]||"").toLowerCase());return m?m.id:0;})(),
-        nombre:r[4]||"",
-        fecha:(r[1]||"").split("T")[0]||"",
-        tipo:r[5]||"",
-        inicio:r[6]||"",
-        fin:r[7]||"",
-        horas:parseFloat(r[8])||0,
-        obs:r[10]||"",
-        ts:new Date().toISOString(),
-      })).filter(a=>a.nombre&&a.fecha);
+      S.acts=resp.actividades.map((r,i)=>{
+        // r[1] puede ser Date object (Sheets) o string — normalizar
+        let fecha="";
+        if(r[1] instanceof Date||Object.prototype.toString.call(r[1])==="[object Date]"){
+          fecha=r[1].toISOString().split("T")[0];
+        } else if(typeof r[1]==="string"){
+          fecha=r[1].split("T")[0];
+        } else if(r[1]){
+          fecha=new Date(r[1]).toISOString().split("T")[0];
+        }
+        const actId=parseInt(r[0])||i+1;
+        return {
+          id:actId,
+          actId:actId, // ID real guardado en columna A del Sheets
+          personaId:(()=>{const m=S.miembros.find(x=>x.nombre.toLowerCase()===(r[2]||"").toLowerCase());return m?m.id:0;})(),
+          nombre:String(r[4]||""),
+          fecha,
+          tipo:String(r[5]||""),
+          inicio:String(r[6]||""),
+          fin:String(r[7]||""),
+          horas:parseFloat(r[8])||0,
+          obs:String(r[10]||""),
+          ts:new Date().toISOString(),
+        };
+      }).filter(a=>a.nombre&&a.fecha);
       S.nid=Math.max(...S.acts.map(a=>a.id),0)+1;
       save();
       setSy("ok","Datos cargados desde Google Sheets ✓");
@@ -1026,11 +1043,18 @@ function guardarEdit(){
   // Sync edit to Sheets
   if(S.url){
     const cbName="edit_"+Date.now();
-    window[cbName]=function(r){try{delete window[cbName];}catch(e){}
-      if(r&&r.status==="ok") toast("Cambios guardados en Sheets ✓");
+    window[cbName]=function(r){
+      try{delete window[cbName];}catch(e){}
+      if(r&&r.status==="ok"){
+        toast("Cambios guardados en Sheets ✓");
+        setTimeout(()=>loadFromSheets(()=>renderAll()),800);
+      } else {
+        toast("Guardado local. Error en Sheets: "+(r&&r.mensaje||"desconocido"),"error");
+      }
     };
+    const actId=S.acts.find(a=>a.id===id)?.actId||id;
     const payload={action:"editActivity",data:{
-      sheetsRow,id,
+      actId, // ID en columna A del Sheets — más fiable que número de fila
       fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",
       actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,
       horas,observaciones:obs
