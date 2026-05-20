@@ -354,13 +354,15 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
     <div class="mds">Apps Script corregido — sigue estos pasos exactamente.</div>
     <div class="sst"><div class="ssn">1</div><div class="ssb"><div class="sst2">Abrir el Google Sheets convertido (nativo, no .xlsx)</div>Debe tener el menú "Extensiones" visible en la barra superior.</div></div>
     <div class="sst"><div class="ssn">2</div><div class="ssb"><div class="sst2">Extensiones → Apps Script → borrar todo el código existente → pegar este:</div>
-<div class="scode">// ══════════════════════════════════════════════
-// APPS SCRIPT — Sistema TI PagoDirecto v2
-// Columnas: A=ID B=Fecha C=Persona D=Cargo E=Actividad
-//           F=Tipo G=HoraInicio H=HoraFin I=Horas
-//           J=Tipo(dup) K=Observaciones L=Proyecto/Plataforma
-// ══════════════════════════════════════════════
-const SHEET_NAME = 'Actividades';
+<div class="scode">// ══════════════════════════════════════════════════════════════
+// APPS SCRIPT — Sistema TI PagoDirecto v3
+// Columnas del Sheets (fila 3 en adelante):
+//   A=ID  B=Fecha  C=Persona  D=Cargo  E=Actividad  F=Tipo
+//   G=HoraInicio  H=HoraFin  I=Horas  J=Tipo(dup)
+//   K=Observaciones  L=Proyecto/Plataforma
+// ══════════════════════════════════════════════════════════════
+const SHEET_NAME   = 'Actividades';
+const DASH_NAME    = 'Dashboard';
 const SPREADSHEET_ID = 'PEGAR_AQUI_EL_ID_DE_TU_SHEETS';
 
 function doGet(e)  { return handleReq(e); }
@@ -368,33 +370,32 @@ function doPost(e) { return handleReq(e); }
 
 function handleReq(e) {
   const lock = LockService.getScriptLock();
-  lock.tryLock(10000);
+  lock.tryLock(15000);
   try {
-    if (e.parameter && e.parameter.action === 'getActivities') {
-      return respond(e, getActivities());
-    }
+    const param = e.parameter &amp;&amp; e.parameter.action;
+    if (param === 'getActivities') return respond(e, getActivities());
     let data;
-    if (e.parameter && e.parameter.data) {
+    if (e.parameter &amp;&amp; e.parameter.data) {
       data = JSON.parse(e.parameter.data);
-    } else if (e.postData && e.postData.contents) {
+    } else if (e.postData &amp;&amp; e.postData.contents) {
       data = JSON.parse(e.postData.contents);
     } else {
-      return respond(e, {status:'activo', mensaje:'Apps Script activo'});
+      return respond(e, {status:'activo', mensaje:'Apps Script v3 activo'});
     }
     if (data.action === 'addActivity')    return respond(e, addActivity(data.data));
     if (data.action === 'editActivity')   return respond(e, editActivity(data.data));
     if (data.action === 'deleteActivity') return respond(e, deleteActivity(data.data));
     if (data.action === 'getActivities')  return respond(e, getActivities());
-    return respond(e, {status:'error', mensaje:'Accion no reconocida'});
+    return respond(e, {status:'error', mensaje:'Accion no reconocida: '+data.action});
   } catch(err) {
     return respond(e, {status:'error', mensaje: err.toString()});
   } finally { lock.releaseLock(); }
 }
 
 function respond(e, data) {
-  const cb = e.parameter && e.parameter.callback;
+  const cb = e.parameter &amp;&amp; e.parameter.callback;
   const output = cb ? cb+'('+JSON.stringify(data)+');' : JSON.stringify(data);
-  const mime = cb ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON;
+  const mime   = cb ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON;
   return ContentService.createTextOutput(output).setMimeType(mime);
 }
 
@@ -402,6 +403,7 @@ function getSheet() {
   return SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
 }
 
+// ── LEER ACTIVIDADES ──────────────────────────────────────────
 function getActivities() {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
@@ -409,82 +411,325 @@ function getActivities() {
   const data = sheet.getRange(3, 1, lastRow-2, 12).getValues();
   const actividades = data.filter(r =&gt; r[0] &amp;&amp; r[4]).map(r =&gt; {
     const row = [...r];
+    // Normalizar fecha
     if (row[1] instanceof Date) {
       row[1] = Utilities.formatDate(row[1], Session.getScriptTimeZone(), 'yyyy-MM-dd');
     }
+    // Normalizar horas (pueden venir como fracción decimal del día)
+    [6, 7].forEach(idx =&gt; {
+      if (row[idx] instanceof Date) {
+        const d = row[idx];
+        row[idx] = Utilities.formatDate(d, 'UTC', 'HH:mm');
+      } else if (typeof row[idx] === 'number') {
+        const mins = Math.round(row[idx] * 24 * 60);
+        row[idx] = String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins%60).padStart(2,'0');
+      }
+    });
     return row;
   });
   return {status:'ok', actividades};
 }
 
+// ── AGREGAR ACTIVIDAD ─────────────────────────────────────────
 function addActivity(d) {
   const sheet = getSheet();
   const lastRow = Math.max(sheet.getLastRow(), 2);
+  const newId   = lastRow - 1;
   sheet.appendRow([
-    lastRow-1, d.fecha, d.persona, d.cargo,
-    d.actividad, d.tipo, d.horaInicio, d.horaFin,
-    d.horas, d.tipo, d.observaciones||'', d.proyecto||''
+    newId,
+    d.fecha,
+    d.persona,
+    d.cargo,
+    d.actividad,
+    d.tipo,
+    d.horaInicio,
+    d.horaFin,
+    d.horas,
+    d.tipo,               // Categoría Dashboard (duplicado histórico)
+    d.observaciones || '',
+    d.proyecto      || ''
   ]);
-  return {status:'ok', id: lastRow-1};
+  rebuildDashboard();
+  return {status:'ok', id: newId};
 }
 
+// ── EDITAR ACTIVIDAD ──────────────────────────────────────────
 function editActivity(d) {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow &lt; 3) return {status:'error', mensaje:'Sin datos'};
-  // Acepta tanto d.actId como d.id para compatibilidad
   const buscarId = String(d.actId !== undefined ? d.actId : d.id);
-  const ids = sheet.getRange(3,1,lastRow-2,1).getValues();
-  for (let i=0; i&lt;ids.length; i++) {
+  const ids = sheet.getRange(3, 1, lastRow-2, 1).getValues();
+  for (let i = 0; i &lt; ids.length; i++) {
     if (String(ids[i][0]) === buscarId) {
-      sheet.getRange(i+3,1,1,12).setValues([[
+      sheet.getRange(i+3, 1, 1, 12).setValues([[
         buscarId, d.fecha, d.persona, d.cargo,
         d.actividad, d.tipo, d.horaInicio, d.horaFin,
         d.horas, d.tipo, d.observaciones||'', d.proyecto||''
       ]]);
+      rebuildDashboard();
       return {status:'ok'};
     }
   }
   return {status:'error', mensaje:'ID no encontrado: '+buscarId};
 }
 
+// ── ELIMINAR ACTIVIDAD ────────────────────────────────────────
 function deleteActivity(d) {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow &lt; 3) return {status:'error'};
   const buscarId = String(d.actId !== undefined ? d.actId : d.id);
-  const ids = sheet.getRange(3,1,lastRow-2,1).getValues();
-  for (let i=0; i&lt;ids.length; i++) {
+  const ids = sheet.getRange(3, 1, lastRow-2, 1).getValues();
+  for (let i = 0; i &lt; ids.length; i++) {
     if (String(ids[i][0]) === buscarId) {
       sheet.deleteRow(i+3);
+      rebuildDashboard();
       return {status:'ok'};
     }
   }
   return {status:'error', mensaje:'ID no encontrado: '+buscarId};
 }
 
+// ── DASHBOARD DINÁMICO ────────────────────────────────────────
+// Se regenera completamente tras cada cambio, usando los datos reales
+function rebuildDashboard() {
+  const ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const actSheet = ss.getSheetByName(SHEET_NAME);
+  let dash     = ss.getSheetByName(DASH_NAME);
+  if (!dash) dash = ss.insertSheet(DASH_NAME);
+
+  const lastRow = actSheet.getLastRow();
+  const rows    = lastRow &gt;= 3
+    ? actSheet.getRange(3, 1, lastRow-2, 12).getValues().filter(r =&gt; r[0] &amp;&amp; r[4])
+    : [];
+
+  // Recopilar personas y tipos únicos del dataset
+  const personasMap = {}; // nombre -&gt; {cargo, horas, acts, porTipo:{}}
+  const tiposSet    = new Set();
+
+  rows.forEach(r =&gt; {
+    const nombre = String(r[2]||'').trim();
+    const cargo  = String(r[3]||'').trim();
+    const tipo   = String(r[5]||'').trim();
+    const horas  = parseFloat(r[8])||0;
+    if (!nombre) return;
+    if (!personasMap[nombre]) personasMap[nombre] = {cargo, horas:0, acts:0, porTipo:{}};
+    personasMap[nombre].horas += horas;
+    personasMap[nombre].acts++;
+    if (tipo) {
+      personasMap[nombre].porTipo[tipo] = (personasMap[nombre].porTipo[tipo]||0) + horas;
+      tiposSet.add(tipo);
+    }
+  });
+
+  const personas = Object.entries(personasMap).sort((a,b)=&gt;a[0].localeCompare(b[0]));
+  const tipos    = Array.from(tiposSet).sort();
+
+  // ── Limpiar y reconstruir la hoja Dashboard ──
+  dash.clearContents();
+  dash.clearFormats();
+
+  // Estilos
+  const VERDE_OSCURO  = '#1a5c1a';
+  const VERDE_MEDIO   = '#2d6a2d';
+  const VERDE_CLARO   = '#e8f5e9';
+  const AZUL_CLARO    = '#e3f0fb';
+  const GRIS          = '#f5f5f5';
+  const WHITE         = '#ffffff';
+  const BOLD          = SpreadsheetApp.newTextStyle().setBold(true).build();
+
+  let row = 1;
+
+  // ── TÍTULO PRINCIPAL ──
+  dash.getRange(row, 1, 1, 8).merge()
+      .setValue('DASHBOARD — RESUMEN DEL EQUIPO TI')
+      .setBackground(VERDE_OSCURO)
+      .setFontColor(WHITE)
+      .setFontWeight('bold')
+      .setFontSize(13)
+      .setHorizontalAlignment('center');
+  dash.setRowHeight(row, 36);
+  row++;
+
+  // Fecha de actualización
+  dash.getRange(row, 1, 1, 8).merge()
+      .setValue('Última actualización: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+      .setBackground(VERDE_CLARO)
+      .setFontColor(VERDE_OSCURO)
+      .setFontSize(9)
+      .setHorizontalAlignment('right');
+  row += 2;
+
+  // ── SECCIÓN 1: DISTRIBUCIÓN POR PERSONA ──
+  dash.getRange(row, 1, 1, Math.max(4+tipos.length, 6)).merge()
+      .setValue('DISTRIBUCIÓN POR PERSONA')
+      .setBackground(VERDE_MEDIO)
+      .setFontColor(WHITE)
+      .setFontWeight('bold')
+      .setFontSize(11);
+  row++;
+
+  // Headers
+  const personaHeaders = ['Persona', 'Cargo', 'Total Horas', 'Actividades'].concat(
+    tipos.map(t =&gt; t.length &gt; 18 ? t.substring(0,16)+'…' : t)
+  );
+  const hRange = dash.getRange(row, 1, 1, personaHeaders.length);
+  hRange.setValues([personaHeaders])
+        .setBackground(VERDE_MEDIO)
+        .setFontColor(WHITE)
+        .setFontWeight('bold')
+        .setFontSize(9)
+        .setHorizontalAlignment('center');
+  row++;
+
+  // Filas de personas
+  personas.forEach(([nombre, d], idx) =&gt; {
+    const tipoVals = tipos.map(t =&gt; {
+      const h = d.porTipo[t]||0;
+      return h &gt; 0 ? parseFloat(h.toFixed(1)) : 0;
+    });
+    const rowData = [nombre, d.cargo, parseFloat(d.horas.toFixed(1)), d.acts].concat(tipoVals);
+    const rng = dash.getRange(row, 1, 1, rowData.length);
+    rng.setValues([rowData])
+       .setBackground(idx % 2 === 0 ? WHITE : GRIS)
+       .setFontSize(10);
+    // Negrita nombre
+    dash.getRange(row, 1).setFontWeight('bold');
+    // Color total horas
+    dash.getRange(row, 3).setFontColor(VERDE_OSCURO).setFontWeight('bold');
+    row++;
+  });
+
+  // Fila TOTAL
+  if (personas.length &gt; 0) {
+    const totalHoras = personas.reduce((s,[,d])=&gt;s+d.horas,0);
+    const totalActs  = personas.reduce((s,[,d])=&gt;s+d.acts,0);
+    const totalTipos = tipos.map(t =&gt; personas.reduce((s,[,d])=&gt;s+(d.porTipo[t]||0),0));
+    const totalRow   = ['TOTAL EQUIPO', '', parseFloat(totalHoras.toFixed(1)), totalActs]
+                       .concat(totalTipos.map(v=&gt;parseFloat(v.toFixed(1))));
+    dash.getRange(row, 1, 1, totalRow.length)
+        .setValues([totalRow])
+        .setBackground(VERDE_CLARO)
+        .setFontWeight('bold')
+        .setFontColor(VERDE_OSCURO)
+        .setFontSize(10);
+    row++;
+  }
+  row += 2;
+
+  // ── SECCIÓN 2: TOTALES POR TIPO ──
+  dash.getRange(row, 1, 1, 4).merge()
+      .setValue('TOTALES POR TIPO DE ACTIVIDAD')
+      .setBackground(AZUL_CLARO.replace('fb','90'))
+      .setFontColor('#1a3a6a')
+      .setFontWeight('bold')
+      .setFontSize(11);
+  row++;
+
+  const tipoHeaders2 = ['Tipo de Actividad', 'Total Horas', '% del Total', 'N° Actividades'];
+  dash.getRange(row, 1, 1, 4)
+      .setValues([tipoHeaders2])
+      .setBackground('#2a5fa8')
+      .setFontColor(WHITE)
+      .setFontWeight('bold')
+      .setFontSize(9)
+      .setHorizontalAlignment('center');
+  row++;
+
+  const totalHorasAll = rows.reduce((s,r)=&gt;s+(parseFloat(r[8])||0),0);
+  tipos.forEach((tipo, idx) =&gt; {
+    const horasTipo = rows.filter(r=&gt;String(r[5])===tipo).reduce((s,r)=&gt;s+(parseFloat(r[8])||0),0);
+    const actsTipo  = rows.filter(r=&gt;String(r[5])===tipo).length;
+    const pct       = totalHorasAll &gt; 0 ? (horasTipo/totalHorasAll*100).toFixed(1)+'%' : '0,0%';
+    dash.getRange(row, 1, 1, 4)
+        .setValues([[tipo, parseFloat(horasTipo.toFixed(1)), pct, actsTipo]])
+        .setBackground(idx%2===0 ? WHITE : GRIS)
+        .setFontSize(10);
+    row++;
+  });
+  if (tipos.length === 0) {
+    dash.getRange(row, 1, 1, 4).merge()
+        .setValue('Sin actividades registradas')
+        .setFontColor('#999999').setFontStyle('italic').setFontSize(10);
+    row++;
+  }
+  row += 2;
+
+  // ── SECCIÓN 3: PROYECTOS/PLATAFORMAS ──
+  const proyectos = {};
+  rows.forEach(r =&gt; {
+    const p = String(r[11]||'').trim();
+    if (p) proyectos[p] = (proyectos[p]||0) + 1;
+  });
+  const proyEntries = Object.entries(proyectos).sort((a,b)=&gt;b[1]-a[1]);
+
+  if (proyEntries.length &gt; 0) {
+    dash.getRange(row, 1, 1, 3).merge()
+        .setValue('ACTIVIDADES POR PROYECTO/PLATAFORMA')
+        .setBackground('#6a3a9e')
+        .setFontColor(WHITE)
+        .setFontWeight('bold')
+        .setFontSize(11);
+    row++;
+    dash.getRange(row, 1, 1, 3)
+        .setValues([['Proyecto / Plataforma', 'N° Actividades', '% del Total']])
+        .setBackground('#8a5abc')
+        .setFontColor(WHITE)
+        .setFontWeight('bold')
+        .setFontSize(9)
+        .setHorizontalAlignment('center');
+    row++;
+    const totalActs = rows.length;
+    proyEntries.forEach(([p, n], idx) =&gt; {
+      const pct = totalActs &gt; 0 ? (n/totalActs*100).toFixed(1)+'%' : '0,0%';
+      dash.getRange(row, 1, 1, 3)
+          .setValues([[p, n, pct]])
+          .setBackground(idx%2===0 ? WHITE : '#f3eaff')
+          .setFontSize(10);
+      row++;
+    });
+    row += 2;
+  }
+
+  // Nota al pie
+  dash.getRange(row, 1, 1, 8).merge()
+      .setValue('✓ Dashboard regenerado automáticamente por Apps Script al agregar, editar o eliminar actividades.')
+      .setFontColor('#888888')
+      .setFontStyle('italic')
+      .setFontSize(9);
+
+  // Auto-ajustar columnas
+  try { dash.autoResizeColumns(1, 12); } catch(e) {}
+
+  return {status:'ok'};
+}
+
+// ── REPORTE MENSUAL ────────────────────────────────────────────
 function scheduledMonthlyReport() {
   const sheet = getSheet();
-  const data = sheet.getDataRange().getValues();
-  const now = new Date();
-  const m = now.getMonth(), y = now.getFullYear();
+  const data  = sheet.getDataRange().getValues();
+  const now   = new Date();
+  const month = now.getMonth(), year = now.getFullYear();
   const monthly = data.slice(2).filter(r =&gt; {
     const d = new Date(r[1]);
-    return d.getMonth()===m &amp;&amp; d.getFullYear()===y;
+    return d.getMonth() === month &amp;&amp; d.getFullYear() === year;
   });
-  const byP = {};
+  const byPerson = {};
   monthly.forEach(r =&gt; {
-    if (!byP[r[2]]) byP[r[2]] = {horas:0, acts:0};
-    byP[r[2]].horas += parseFloat(r[8])||0;
-    byP[r[2]].acts++;
+    const name = r[2];
+    if (!byPerson[name]) byPerson[name] = {horas:0, actividades:0};
+    byPerson[name].horas      += parseFloat(r[8])||0;
+    byPerson[name].actividades++;
   });
-  const mn = now.toLocaleString('es',{month:'long',year:'numeric'});
-  let body = 'Reporte TI — '+mn+'\n\n';
-  Object.entries(byP).forEach(([p,d]) =&gt; {
-    body += p+': '+d.horas.toFixed(1)+'h — '+d.acts+' actividades\n';
+  const monthName = now.toLocaleString('es', {month:'long', year:'numeric'});
+  let body = 'Reporte mensual TI — ' + monthName + '\n\n';
+  Object.entries(byPerson).forEach(([p, d]) =&gt; {
+    body += p + ': ' + d.horas.toFixed(1) + 'h en ' + d.actividades + ' actividades\n';
   });
-  MailApp.sendEmail('lider.ti@pagodirecto.com','Reporte TI — '+mn, body);
-}</div>
+  MailApp.sendEmail('oswaldo.rivera@pdtech.pe', 'Reporte TI — ' + monthName, body);
+}
+</div>
     </div></div>
     <div class="sst"><div class="ssn">3</div><div class="ssb"><div class="sst2">Guardar (Ctrl+S) → Implementar → Nueva implementación</div>
       • Tipo: <strong>Aplicación web</strong><br>
@@ -904,32 +1149,44 @@ async function testConn(){
 
 function exportCSV(){
   const mm={};S.miembros.forEach(m=>mm[m.id]=m);
+  // Normalizar hora: puede venir como "16:30", como ISO date, o como fracción decimal de día
+  function normTime(v){
+    if(!v)return"";
+    if(typeof v==="string"){
+      // Ya es HH:MM
+      if(/^\d{1,2}:\d{2}/.test(v))return v.substring(0,5);
+      // Es ISO con T — extraer hora UTC
+      if(v.includes("T")){const d=new Date(v);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0");}
+    }
+    if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}
+    return String(v);
+  }
   const headers=["ID","Fecha","Persona","Cargo","Actividad","Tipo","Proyecto/Plataforma","Hora Inicio","Hora Fin","Horas","Observaciones"];
   const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
   const rows=[headers.map(esc).join(",")];
-  [...S.acts].sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach((a,i)=>{
+  [...S.acts].sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||"")).forEach((a,i)=>{
     const m=mm[a.personaId]||{nombre:"",cargo:""};
     rows.push([
       a.actId||a.id||i+1,
-      a.fecha,
+      a.fecha||"",
       m.nombre,
       m.cargo,
-      a.nombre,
-      a.tipo,
+      a.nombre||"",
+      a.tipo||"",
       a.proyecto||"",
-      a.inicio,
-      a.fin,
-      a.horas,
+      normTime(a.inicio),
+      normTime(a.fin),
+      parseFloat(a.horas)||0,
       a.obs||""
     ].map(esc).join(","));
   });
-  // BOM UTF-8 para que Excel lo abra correctamente con tildes y ñ
+  // BOM UTF-8 asegura que Excel muestre tildes y ñ correctamente
   const bom="\uFEFF";
   const csv=bom+rows.join("\r\n");
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download="actividades_ti_"+hoy()+".csv";a.click();URL.revokeObjectURL(url);
-  toast("CSV exportado ✓ ("+S.acts.length+" registros)","info");
+  toast("CSV exportado ✓ — "+S.acts.length+" registros","info");
 }
 
 // ── SELECTS ──
@@ -1012,8 +1269,8 @@ function loadFromSheets(onDone){
           nombre:String(r[4]||""),
           fecha,
           tipo:String(r[5]||""),
-          inicio:String(r[6]||""),
-          fin:String(r[7]||""),
+          inicio:(()=>{const v=r[6];if(!v)return"";if(typeof v==="string"&&v.match(/^\d{1,2}:\d{2}/))return v;if(v instanceof Date||Object.prototype.toString.call(v)==="[object Date]"){const d=new Date(v);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0");}if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}return String(v);})(),
+          fin:(()=>{const v=r[7];if(!v)return"";if(typeof v==="string"&&v.match(/^\d{1,2}:\d{2}/))return v;if(v instanceof Date||Object.prototype.toString.call(v)==="[object Date]"){const d=new Date(v);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0");}if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}return String(v);})(),
           horas:parseFloat(r[8])||0,
           obs:String(r[10]||""),
           proyecto:String(r[11]||""),
