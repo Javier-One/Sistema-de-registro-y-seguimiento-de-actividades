@@ -301,6 +301,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
     <div class="fr"><div class="fi"><label>Hora inicio</label><input type="time" id="fini" oninput="calcH()"></div><div class="fi"><label>Hora fin</label><input type="time" id="ffin" oninput="calcH()"></div></div>
     <div class="hc" id="hcalc"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5" stroke-linecap="round"/></svg>Duración: <strong id="hval">—</strong></div>
     <div class="oa" id="oalert">⚠ Posible solapamiento con otra actividad.</div>
+    <div class="fi"><label>Proyecto / Plataforma</label><select id="fproy"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Observaciones (opcional)</label><textarea id="fobs" rows="2" placeholder="Notas adicionales..."></textarea></div>
     <div class="mda"><button class="btn" onclick="hideM('mact')">Cancelar</button><button class="btn btn-p" id="bguardar" onclick="guardar()">Guardar actividad</button></div>
   </div>
@@ -321,6 +322,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
       <div>
         <div class="ss"><div class="st">Tipos de actividad</div><div id="tiposlist"></div>
           <div style="display:flex;gap:7px;margin-top:8px"><input type="text" id="ntipo" placeholder="Nuevo tipo..." style="flex:1;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--rs);font-family:Sora,sans-serif;font-size:12.5px;background:var(--bg3)"><button class="btn btn-sm btn-p" onclick="addTipo()">+ Agregar</button></div>
+        </div>
+        <div class="ss"><div class="st">Proyectos / Plataformas</div><div id="proylist"></div>
+          <div style="display:flex;gap:7px;margin-top:8px"><input type="text" id="nproy" placeholder="Nueva plataforma..." style="flex:1;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--rs);font-family:Sora,sans-serif;font-size:12.5px;background:var(--bg3)"><button class="btn btn-sm btn-p" onclick="addProy()">+ Agregar</button></div>
         </div>
         <div class="ss"><div class="st">Categorías del dashboard</div><div id="catslist"></div>
           <div style="display:flex;gap:7px;margin-top:8px"><input type="text" id="ncat" placeholder="Nueva categoría..." style="flex:1;padding:7px 10px;border:1px solid var(--bd2);border-radius:var(--rs);font-family:Sora,sans-serif;font-size:12.5px;background:var(--bg3)"><button class="btn btn-sm btn-p" onclick="addCat()">+ Agregar</button></div>
@@ -489,6 +493,7 @@ function scheduledMonthlyReport() {
     <div class="fr"><div class="fi"><label>Fecha</label><input type="date" id="ef"></div><div class="fi"><label>Tipo</label><select id="et2"><option value="">Seleccionar...</option></select></div></div>
     <div class="fr"><div class="fi"><label>Hora inicio</label><input type="time" id="eini" oninput="calcHE()"></div><div class="fi"><label>Hora fin</label><input type="time" id="efin" oninput="calcHE()"></div></div>
     <div class="hc" id="ehcalc"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5" stroke-linecap="round"/></svg>Duración: <strong id="ehval">—</strong></div>
+    <div class="fi"><label>Proyecto / Plataforma</label><select id="eproy"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Observaciones (opcional)</label><textarea id="eobs" rows="2"></textarea></div>
     <div class="mda"><button class="btn" onclick="hideM('medit')">Cancelar</button><button class="btn btn-p" onclick="guardarEdit()">Guardar cambios</button></div>
   </div>
@@ -501,7 +506,7 @@ const CTC=["#2d6a2d","#1a5fa8","#c0392b","#16a34a","#7c3aed","#0d7a5f","#b7770d"
 const TM={"Proyectos":{icon:"📐",bg:"rgba(45,106,45,.1)",ac:"#2d6a2d"},"Incidencias":{icon:"🔧",bg:"rgba(26,95,168,.1)",ac:"#1a5fa8"},"Urgencias":{icon:"🚨",bg:"rgba(192,57,43,.1)",ac:"#c0392b"},"Mejoras internas":{icon:"✨",bg:"rgba(22,163,74,.1)",ac:"#16a34a"},"Soporte":{icon:"💬",bg:"rgba(124,58,237,.1)",ac:"#7c3aed"},"Coordinaciones":{icon:"🔗",bg:"rgba(13,122,95,.1)",ac:"#0d7a5f"},"Reuniones":{icon:"👥",bg:"rgba(107,99,98,.12)",ac:"#6b6962"}};
 
 let editId=null;
-let S={acts:[],miembros:[{id:1,nombre:"Abel Mechán",cargo:"Técnico TI"},{id:2,nombre:"Javier Rivera",cargo:"Técnico TI"},{id:3,nombre:"Jesús Araujo",cargo:"Técnico TI"},{id:4,nombre:"Vanessa Calderón",cargo:"Analista TI"},{id:5,nombre:"Manuel Sotelo",cargo:"Líder TI"}],tipos:["Proyectos","Incidencias","Urgencias","Mejoras internas","Soporte","Coordinaciones","Reuniones"],cats:["Proyectos","Incidencias","Urgencias","Mejoras internas"],url:"",f:"hoy",fm:"hoy",fe:"hoy",ft:"",nid:100};
+let S={acts:[],miembros:[{id:1,nombre:"Abel Mechán",cargo:"Técnico TI"},{id:2,nombre:"Javier Rivera",cargo:"Técnico TI"},{id:3,nombre:"Jesús Araujo",cargo:"Técnico TI"},{id:4,nombre:"Vanessa Calderón",cargo:"Analista TI"},{id:5,nombre:"Manuel Sotelo",cargo:"Líder TI"}],tipos:["Proyectos","Incidencias","Urgencias","Mejoras internas","Soporte","Coordinaciones","Reuniones"],cats:["Proyectos","Incidencias","Urgencias","Mejoras internas"],plataformas:["Web","Mobile","Infraestructura","Base de datos","Seguridad","Interno"],url:"",f:"hoy",fm:"hoy",fe:"hoy",ft:"",nid:100};
 
 const avc=id=>AVC[(id-1)%AVC.length];
 const ini=n=>(n||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();
@@ -645,7 +650,7 @@ function renderList(id,acts){
   const mm={};S.miembros.forEach(m=>mm[m.id]=m);
   el.innerHTML=[...acts].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(a=>{
     const m=mm[a.personaId]||{nombre:"?",cargo:"?",id:0};const t=tm(a.tipo);
-    return`<div class="ar"><div class="ai" style="background:${t.bg}">${t.icon}</div><div class="ab2"><div class="an">${a.nombre}</div><div class="am"><div class="av" style="background:${avc(m.id)};width:16px;height:16px;font-size:7px;border-radius:50%">${ini(m.nombre)}</div><span>${m.nombre}</span><span style="color:var(--bd2)">·</span><span>${a.fecha}</span><span style="color:var(--bd2)">·</span><span>${a.inicio}–${a.fin}</span><span class="bdg" style="background:${t.bg};color:${t.ac}">${a.tipo}</span>${a.obs?`<span style="color:var(--hi);font-style:italic;font-size:11px">${a.obs}</span>`:""}</div></div><div class="ari"><span class="ah">${a.horas}h</span><div class="aac"><button class="abtn" onclick="editA(${a.id})" title="Editar" style="color:var(--bl);border-color:var(--bl)">✎</button><button class="abtn" onclick="delA(${a.id})" title="Eliminar">✕</button></div></div></div>`;
+    return`<div class="ar"><div class="ai" style="background:${t.bg}">${t.icon}</div><div class="ab2"><div class="an">${a.nombre}</div><div class="am"><div class="av" style="background:${avc(m.id)};width:16px;height:16px;font-size:7px;border-radius:50%">${ini(m.nombre)}</div><span>${m.nombre}</span><span style="color:var(--bd2)">·</span><span>${a.fecha}</span><span style="color:var(--bd2)">·</span><span>${a.inicio}–${a.fin}</span><span class="bdg" style="background:${t.bg};color:${t.ac}">${a.tipo}</span>${a.proyecto?`<span class="bdg" style="background:rgba(26,95,168,.1);color:#1a5fa8">📁 ${a.proyecto}</span>`:""} ${a.obs?`<span style="color:var(--hi);font-style:italic;font-size:11px">${a.obs}</span>`:""}</div></div><div class="ari"><span class="ah">${a.horas}h</span><div class="aac"><button class="abtn" onclick="editA(${a.id})" title="Editar" style="color:var(--bl);border-color:var(--bl)">✎</button><button class="abtn" onclick="delA(${a.id})" title="Eliminar">✕</button></div></div></div>`;
   }).join("");
 }
 
@@ -671,6 +676,7 @@ function guardar(){
   const inicio=document.getElementById("fini").value;
   const fin=document.getElementById("ffin").value;
   const obs=document.getElementById("fobs").value.trim();
+  const proyecto=document.getElementById("fproy").value;
   if(!pid||!nombre||!fecha||!tipo||!inicio||!fin){toast("Completa todos los campos","error");return;}
   const[ih,im]=inicio.split(":").map(Number),[fh,fm]=fin.split(":").map(Number);
   const diff=(fh*60+fm)-(ih*60+im);
@@ -681,13 +687,13 @@ function guardar(){
     // MODO EDICIÓN
     const idx=S.acts.findIndex(a=>a.id===editId);
     if(idx>=0){
-      S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,horas};
+      S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas};
     }
     save();hideM("mact");renderAll();
     // Enviar edición a Sheets
     if(S.url){
       const m=S.miembros.find(x=>x.id===pid);
-      const payload={action:"editActivity",data:{id:editId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,horas,observaciones:obs||""}};
+      const payload={action:"editActivity",data:{id:editId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,horas,observaciones:obs||"",proyecto:proyecto||""}};
       const cbName="edit_"+Date.now();
       window[cbName]=function(r){
         try{delete window[cbName];}catch(e){}
@@ -703,7 +709,7 @@ function guardar(){
     editId=null;
   } else {
     // MODO NUEVO
-    const act={id:S.nid++,personaId:pid,nombre,fecha,tipo,inicio,fin,obs,horas,ts:new Date().toISOString()};
+    const act={id:S.nid++,personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas,ts:new Date().toISOString()};
     S.acts.push(act);save();hideM("mact");renderAll();
     syncSheets(act,()=>{
       setTimeout(()=>loadFromSheets(()=>renderAll()),1500);
@@ -758,6 +764,7 @@ function editA(id){
     document.getElementById("fini").value=a.inicio;
     document.getElementById("ffin").value=a.fin;
     document.getElementById("fobs").value=a.obs||"";
+    document.getElementById("fproy").value=a.proyecto||"";
     calcH();
   },50);
 }
@@ -779,6 +786,7 @@ function syncSheets(act,onSent){
       horaFin:act.fin,
       horas:act.horas,
       observaciones:act.obs||"",
+      proyecto:act.proyecto||"",
       timestamp:act.ts
     }
   };
@@ -891,6 +899,8 @@ function popSels(){
   [["fp",`<option value="">Seleccionar...</option>`+opts],["fpersona",`<option value="">Todas las personas</option>`+opts],["misp",`<option value="">— Seleccionar —</option>`+opts]].forEach(([id,html])=>{const el=document.getElementById(id);if(!el)return;const v=el.value;el.innerHTML=html;el.value=v;});
   const tOpts=S.tipos.map(t=>`<option value="${t}">${t}</option>`).join("");
   [["ft2",`<option value="">Seleccionar...</option>`+tOpts],["eqtipo",`<option value="">Todos los tipos</option>`+tOpts]].forEach(([id,html])=>{const el=document.getElementById(id);if(!el)return;const v=el.value;el.innerHTML=html;el.value=v;});
+  const pOpts=S.plataformas.map(p=>`<option value="${p}">${p}</option>`).join("");
+  [["fproy",`<option value="">Seleccionar...</option>`+pOpts],["eproy",`<option value="">Seleccionar...</option>`+pOpts]].forEach(([id,html])=>{const el=document.getElementById(id);if(!el)return;const v=el.value;el.innerHTML=html;el.value=v;});
   document.getElementById("sbtipos").innerHTML=S.tipos.map(t=>`<button class="sbi" onclick="setTF('${t}');sbTA(this)"><div class="sbdot"></div>${t}</button>`).join("");
 }
 
@@ -899,6 +909,7 @@ function renderCfg(){
   document.getElementById("mlist").innerHTML=S.miembros.map(m=>`<div class="mi2"><div class="av" style="background:${avc(m.id)}">${ini(m.nombre)}</div><div class="mii"><div class="min">${m.nombre}</div><div class="mir">${m.cargo}</div></div><button class="mdl" onclick="delM(${m.id})">✕</button></div>`).join("");
   document.getElementById("tiposlist").innerHTML=S.tipos.map(t=>`<span class="tag">${t}<button class="tdl" onclick="delTipo('${t}')">✕</button></span>`).join("");
   document.getElementById("catslist").innerHTML=S.cats.map((c,i)=>`<span class="tag" style="color:${CTC[i%CTC.length]}">${c}<button class="tdl" onclick="delCat('${c}')">✕</button></span>`).join("");
+  document.getElementById("proylist").innerHTML=S.plataformas.map(p=>`<span class="tag">${p}<button class="tdl" onclick="delProy('${p}')">✕</button></span>`).join("");
   if(S.url)document.getElementById("surl").value=S.url;
 }
 function addM(){const n=document.getElementById("nmn").value.trim(),c=document.getElementById("nmc").value.trim();if(!n){toast("Escribe el nombre","error");return;}const mx=S.miembros.reduce((m,x)=>Math.max(m,x.id),0);S.miembros.push({id:mx+1,nombre:n,cargo:c||"Equipo TI"});document.getElementById("nmn").value="";document.getElementById("nmc").value="";save();renderCfg();popSels();toast("Integrante agregado ✓");}
@@ -907,6 +918,8 @@ function addTipo(){const t=document.getElementById("ntipo").value.trim();if(!t||
 function delTipo(t){S.tipos=S.tipos.filter(x=>x!==t);save();renderCfg();popSels();}
 function addCat(){const c=document.getElementById("ncat").value.trim();if(!c||S.cats.includes(c)){toast("Categoría inválida","error");return;}S.cats.push(c);document.getElementById("ncat").value="";save();renderCfg();renderDash();toast("Categoría agregada ✓");}
 function delCat(c){S.cats=S.cats.filter(x=>x!==c);save();renderCfg();renderDash();}
+function addProy(){const p=document.getElementById("nproy").value.trim();if(!p||S.plataformas.includes(p)){toast("Plataforma inválida","error");return;}S.plataformas.push(p);document.getElementById("nproy").value="";save();renderCfg();popSels();toast("Plataforma agregada ✓");}
+function delProy(p){S.plataformas=S.plataformas.filter(x=>x!==p);save();renderCfg();popSels();}
 function saveCfg(){const u=document.getElementById("surl").value.trim();S.url=u;save();toast("Configuración guardada ✓");}
 
 // ── MODALS ──
@@ -964,6 +977,7 @@ function loadFromSheets(onDone){
           fin:String(r[7]||""),
           horas:parseFloat(r[8])||0,
           obs:String(r[10]||""),
+          proyecto:String(r[11]||""),
           ts:new Date().toISOString(),
         };
       }).filter(a=>a.nombre&&a.fecha);
@@ -1006,6 +1020,8 @@ function editA(id){
   document.getElementById("ep").innerHTML=`<option value="">Seleccionar...</option>`+opts;
   const tOpts=S.tipos.map(t=>`<option value="${t}"${t===a.tipo?" selected":""}>${t}</option>`).join("");
   document.getElementById("et2").innerHTML=`<option value="">Seleccionar...</option>`+tOpts;
+  const pOpts=S.plataformas.map(p=>`<option value="${p}"${p===a.proyecto?" selected":""}>${p}</option>`).join("");
+  document.getElementById("eproy").innerHTML=`<option value="">Seleccionar...</option>`+pOpts;
   calcHE();
   showM("medit");
 }
@@ -1029,6 +1045,7 @@ function guardarEdit(){
   const inicio=document.getElementById("eini").value;
   const fin=document.getElementById("efin").value;
   const obs=document.getElementById("eobs").value.trim();
+  const proyecto=document.getElementById("eproy").value;
   if(!pid||!nombre||!fecha||!tipo||!inicio||!fin){toast("Completa todos los campos","error");return;}
   const[ih,im]=inicio.split(":").map(Number),[fh,fm]=fin.split(":").map(Number);
   const diff=(fh*60+fm)-(ih*60+im);
@@ -1038,7 +1055,7 @@ function guardarEdit(){
   const idx=S.acts.findIndex(a=>a.id===id);
   if(idx===-1){toast("Actividad no encontrada","error");return;}
   const m=S.miembros.find(x=>x.id===pid);
-  S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,horas};
+  S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas};
   save();hideM("medit");renderAll();
   // Sync edit to Sheets
   if(S.url){
@@ -1054,10 +1071,10 @@ function guardarEdit(){
     };
     const actId=S.acts.find(a=>a.id===id)?.actId||id;
     const payload={action:"editActivity",data:{
-      actId, // ID en columna A del Sheets — más fiable que número de fila
+      actId,
       fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",
       actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,
-      horas,observaciones:obs
+      horas,observaciones:obs,proyecto:proyecto||""
     }};
     const params=new URLSearchParams({callback:cbName,data:JSON.stringify(payload)});
     const script=document.createElement("script");
