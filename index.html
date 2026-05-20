@@ -354,7 +354,13 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
     <div class="mds">Apps Script corregido — sigue estos pasos exactamente.</div>
     <div class="sst"><div class="ssn">1</div><div class="ssb"><div class="sst2">Abrir el Google Sheets convertido (nativo, no .xlsx)</div>Debe tener el menú "Extensiones" visible en la barra superior.</div></div>
     <div class="sst"><div class="ssn">2</div><div class="ssb"><div class="sst2">Extensiones → Apps Script → borrar todo el código existente → pegar este:</div>
-<div class="scode">const SHEET_NAME = 'Actividades';
+<div class="scode">// ══════════════════════════════════════════════
+// APPS SCRIPT — Sistema TI PagoDirecto v2
+// Columnas: A=ID B=Fecha C=Persona D=Cargo E=Actividad
+//           F=Tipo G=HoraInicio H=HoraFin I=Horas
+//           J=Tipo(dup) K=Observaciones L=Proyecto/Plataforma
+// ══════════════════════════════════════════════
+const SHEET_NAME = 'Actividades';
 const SPREADSHEET_ID = 'PEGAR_AQUI_EL_ID_DE_TU_SHEETS';
 
 function doGet(e)  { return handleReq(e); }
@@ -379,7 +385,7 @@ function handleReq(e) {
     if (data.action === 'editActivity')   return respond(e, editActivity(data.data));
     if (data.action === 'deleteActivity') return respond(e, deleteActivity(data.data));
     if (data.action === 'getActivities')  return respond(e, getActivities());
-    return respond(e, {status:'error'});
+    return respond(e, {status:'error', mensaje:'Accion no reconocida'});
   } catch(err) {
     return respond(e, {status:'error', mensaje: err.toString()});
   } finally { lock.releaseLock(); }
@@ -400,48 +406,61 @@ function getActivities() {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow &lt; 3) return {status:'ok', actividades:[]};
-  const data = sheet.getRange(3, 1, lastRow-2, 11).getValues();
-  return {status:'ok', actividades: data.filter(r =&gt; r[1] &amp;&amp; r[4])};
+  const data = sheet.getRange(3, 1, lastRow-2, 12).getValues();
+  const actividades = data.filter(r =&gt; r[0] &amp;&amp; r[4]).map(r =&gt; {
+    const row = [...r];
+    if (row[1] instanceof Date) {
+      row[1] = Utilities.formatDate(row[1], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    return row;
+  });
+  return {status:'ok', actividades};
 }
 
 function addActivity(d) {
   const sheet = getSheet();
   const lastRow = Math.max(sheet.getLastRow(), 2);
-  sheet.appendRow([lastRow-1, d.fecha, d.persona, d.cargo,
+  sheet.appendRow([
+    lastRow-1, d.fecha, d.persona, d.cargo,
     d.actividad, d.tipo, d.horaInicio, d.horaFin,
-    d.horas, d.tipo, d.observaciones||''
+    d.horas, d.tipo, d.observaciones||'', d.proyecto||''
   ]);
-  return {status:'ok'};
+  return {status:'ok', id: lastRow-1};
 }
 
 function editActivity(d) {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
-  const rows = sheet.getRange(3,1,lastRow-2,11).getValues();
-  for (let i=0; i&lt;rows.length; i++) {
-    if (String(rows[i][0]) === String(d.id)) {
-      sheet.getRange(i+3,1,1,11).setValues([[
-        d.id, d.fecha, d.persona, d.cargo,
+  if (lastRow &lt; 3) return {status:'error', mensaje:'Sin datos'};
+  // Acepta tanto d.actId como d.id para compatibilidad
+  const buscarId = String(d.actId !== undefined ? d.actId : d.id);
+  const ids = sheet.getRange(3,1,lastRow-2,1).getValues();
+  for (let i=0; i&lt;ids.length; i++) {
+    if (String(ids[i][0]) === buscarId) {
+      sheet.getRange(i+3,1,1,12).setValues([[
+        buscarId, d.fecha, d.persona, d.cargo,
         d.actividad, d.tipo, d.horaInicio, d.horaFin,
-        d.horas, d.tipo, d.observaciones||''
+        d.horas, d.tipo, d.observaciones||'', d.proyecto||''
       ]]);
       return {status:'ok'};
     }
   }
-  return {status:'error', mensaje:'No encontrado'};
+  return {status:'error', mensaje:'ID no encontrado: '+buscarId};
 }
 
 function deleteActivity(d) {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
-  const rows = sheet.getRange(3,1,lastRow-2,1).getValues();
-  for (let i=0; i&lt;rows.length; i++) {
-    if (String(rows[i][0]) === String(d.id)) {
+  if (lastRow &lt; 3) return {status:'error'};
+  const buscarId = String(d.actId !== undefined ? d.actId : d.id);
+  const ids = sheet.getRange(3,1,lastRow-2,1).getValues();
+  for (let i=0; i&lt;ids.length; i++) {
+    if (String(ids[i][0]) === buscarId) {
       sheet.deleteRow(i+3);
       return {status:'ok'};
     }
   }
-  return {status:'error'};
+  return {status:'error', mensaje:'ID no encontrado: '+buscarId};
 }
 
 function scheduledMonthlyReport() {
@@ -460,12 +479,11 @@ function scheduledMonthlyReport() {
     byP[r[2]].acts++;
   });
   const mn = now.toLocaleString('es',{month:'long',year:'numeric'});
-  let body = `Reporte TI — ${mn}
-
-`;
-  Object.entries(byP).forEach(([p,d])=&gt;{body+=`${p}: ${d.horas.toFixed(1)}h — ${d.acts} actividades
-`;});
-  MailApp.sendEmail('lider.ti@pagodirecto.com',`Reporte TI — ${mn}`,body);
+  let body = 'Reporte TI — '+mn+'\n\n';
+  Object.entries(byP).forEach(([p,d]) =&gt; {
+    body += p+': '+d.horas.toFixed(1)+'h — '+d.acts+' actividades\n';
+  });
+  MailApp.sendEmail('lider.ti@pagodirecto.com','Reporte TI — '+mn, body);
 }</div>
     </div></div>
     <div class="sst"><div class="ssn">3</div><div class="ssb"><div class="sst2">Guardar (Ctrl+S) → Implementar → Nueva implementación</div>
@@ -693,7 +711,9 @@ function guardar(){
     // Enviar edición a Sheets
     if(S.url){
       const m=S.miembros.find(x=>x.id===pid);
-      const payload={action:"editActivity",data:{id:editId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,horas,observaciones:obs||"",proyecto:proyecto||""}};
+      const actObj=S.acts.find(a=>a.id===editId);
+      const actId=actObj?.actId||editId;
+      const payload={action:"editActivity",data:{actId,id:actId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,horas,observaciones:obs||"",proyecto:proyecto||""}};
       const cbName="edit_"+Date.now();
       window[cbName]=function(r){
         try{delete window[cbName];}catch(e){}
@@ -736,7 +756,7 @@ function delA(id){
     };
     const params=new URLSearchParams({
       callback:cbName,
-      data:JSON.stringify({action:"deleteActivity",data:{actId:act.actId||act.id}})
+      data:JSON.stringify({action:"deleteActivity",data:{actId:act.actId||act.id,id:act.actId||act.id}})
     });
     const script=document.createElement("script");
     script.src=S.url+"?"+params.toString();
@@ -884,13 +904,32 @@ async function testConn(){
 
 function exportCSV(){
   const mm={};S.miembros.forEach(m=>mm[m.id]=m);
-  const rows=[["Fecha","Persona","Cargo","Actividad","Tipo","Hora Inicio","Hora Fin","Horas","Observaciones"]];
-  [...S.acts].sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach(a=>{const m=mm[a.personaId]||{nombre:"",cargo:""};rows.push([a.fecha,m.nombre,m.cargo,a.nombre,a.tipo,a.inicio,a.fin,a.horas,a.obs||""]);});
-  const csv=rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+  const headers=["ID","Fecha","Persona","Cargo","Actividad","Tipo","Proyecto/Plataforma","Hora Inicio","Hora Fin","Horas","Observaciones"];
+  const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
+  const rows=[headers.map(esc).join(",")];
+  [...S.acts].sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach((a,i)=>{
+    const m=mm[a.personaId]||{nombre:"",cargo:""};
+    rows.push([
+      a.actId||a.id||i+1,
+      a.fecha,
+      m.nombre,
+      m.cargo,
+      a.nombre,
+      a.tipo,
+      a.proyecto||"",
+      a.inicio,
+      a.fin,
+      a.horas,
+      a.obs||""
+    ].map(esc).join(","));
+  });
+  // BOM UTF-8 para que Excel lo abra correctamente con tildes y ñ
+  const bom="\uFEFF";
+  const csv=bom+rows.join("\r\n");
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download="actividades_ti_"+hoy()+".csv";a.click();URL.revokeObjectURL(url);
-  toast("CSV exportado ✓","info");
+  toast("CSV exportado ✓ ("+S.acts.length+" registros)","info");
 }
 
 // ── SELECTS ──
@@ -1071,7 +1110,7 @@ function guardarEdit(){
     };
     const actId=S.acts.find(a=>a.id===id)?.actId||id;
     const payload={action:"editActivity",data:{
-      actId,
+      actId, id:actId,
       fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",
       actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,
       horas,observaciones:obs,proyecto:proyecto||""
