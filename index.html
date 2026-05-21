@@ -449,7 +449,7 @@ function addActivity(d) {
     d.observaciones || '',
     d.proyecto      || ''
   ]);
-  rebuildDashboard();
+  try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
   return {status:'ok', id: newId};
 }
 
@@ -467,7 +467,7 @@ function editActivity(d) {
         d.actividad, d.tipo, d.horaInicio, d.horaFin,
         d.horas, d.tipo, d.observaciones||'', d.proyecto||''
       ]]);
-      rebuildDashboard();
+      try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
       return {status:'ok'};
     }
   }
@@ -484,7 +484,7 @@ function deleteActivity(d) {
   for (let i = 0; i &lt; ids.length; i++) {
     if (String(ids[i][0]) === buscarId) {
       sheet.deleteRow(i+3);
-      rebuildDashboard();
+      try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
       return {status:'ok'};
     }
   }
@@ -1114,37 +1114,50 @@ function setSy(type,msg){
 async function testConn(){
   const url=document.getElementById("surl").value.trim();
   const res=document.getElementById("testres");
-  if(!url){res.textContent="⚠ Pega la URL primero";res.style.color="var(--am)";return;}
-  res.textContent="Probando...";res.style.color="var(--mu)";
-  try{
-    // Test JSONP — crear script tag hacia la URL base (sin data)
-    const cbName="test_"+Date.now();
-    const timeoutId=setTimeout(()=>{
-      try{delete window[cbName];}catch(e){}
-      const s=document.getElementById("test_script");if(s)s.parentNode.removeChild(s);
-      // Si llegó hasta aquí sin error, la URL es alcanzable
-      res.textContent="✓ URL alcanzable. Registra una actividad de prueba para confirmar que llega al Sheets.";
-      res.style.color="var(--g)";
-    },5000);
-    window[cbName]=function(resp){
-      clearTimeout(timeoutId);
-      try{delete window[cbName];}catch(e){}
-      const s=document.getElementById("test_script");if(s)s.parentNode.removeChild(s);
-      res.textContent="✓ Conexión confirmada: "+JSON.stringify(resp);
-      res.style.color="var(--g)";
-    };
-    const s=document.createElement("script");
-    s.id="test_script";
-    s.src=url+"?callback="+cbName;
-    s.onerror=()=>{
-      clearTimeout(timeoutId);
-      res.textContent="✕ No se pudo cargar el script. Verifica la URL.";
-      res.style.color="var(--re)";
-    };
-    document.head.appendChild(s);
-  }catch(e){
-    res.textContent="✕ Error: "+e.message;res.style.color="var(--re)";
+  if(!url){res.innerHTML="⚠ Pega la URL primero";res.style.color="var(--am)";return;}
+  if(!url.includes("script.google.com/macros/s/")){
+    res.innerHTML="⚠ La URL no parece válida. Debe tener el formato:<br><code>https://script.google.com/macros/s/.../exec</code>";
+    res.style.color="var(--am)";return;
   }
+  res.innerHTML="🔄 Probando conexión...";res.style.color="var(--mu)";
+  const cbName="test_"+Date.now();
+  const timeoutId=setTimeout(()=>{
+    try{delete window[cbName];}catch(e){}
+    const s=document.getElementById("test_script");if(s&&s.parentNode)s.parentNode.removeChild(s);
+    res.innerHTML=`✕ Sin respuesta tras 8 segundos.<br><br>
+<strong>Causas más comunes:</strong><br>
+① La implementación no tiene acceso "Cualquier usuario" (anónimo)<br>
+② La URL es de una versión anterior — debes <strong>crear nueva implementación</strong>, no editar<br>
+③ El script necesita re-autorización: en Apps Script → Implementar → Administrar implementaciones → verificar estado<br>
+④ El SPREADSHEET_ID en el código no fue reemplazado por el ID real del Sheets`;
+    res.style.color="var(--re)";
+  },8000);
+  window[cbName]=function(resp){
+    clearTimeout(timeoutId);
+    try{delete window[cbName];}catch(e){}
+    const s=document.getElementById("test_script");if(s&&s.parentNode)s.parentNode.removeChild(s);
+    if(resp&&resp.status){
+      res.innerHTML=`✓ Conexión exitosa. Respuesta: <code>${JSON.stringify(resp)}</code>`;
+      res.style.color="var(--g)";
+    } else {
+      res.innerHTML=`⚠ El servidor respondió pero con formato inesperado: <code>${JSON.stringify(resp)}</code>`;
+      res.style.color="var(--am)";
+    }
+  };
+  const s=document.createElement("script");
+  s.id="test_script";
+  s.src=url+"?callback="+cbName;
+  s.onerror=()=>{
+    clearTimeout(timeoutId);
+    try{delete window[cbName];}catch(e){}
+    res.innerHTML=`✕ Error de red al cargar el script.<br><br>
+<strong>Verificar:</strong><br>
+① La URL fue copiada completa (termina en <code>/exec</code>)<br>
+② El script está publicado como app web con acceso "Cualquier usuario"<br>
+③ Intenta abrir la URL directamente en el navegador — si pide login, el acceso no es público`;
+    res.style.color="var(--re)";
+  };
+  document.head.appendChild(s);
 }
 
 function exportCSV(){
