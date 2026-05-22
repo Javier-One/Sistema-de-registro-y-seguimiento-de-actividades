@@ -363,6 +363,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
 //   F=Tipo  G=Horas  H=Observaciones  I=Proyecto/Plataforma
 // ══════════════════════════════════════════════════════════════
 const SHEET_NAME   = 'Actividades';
+const CONFIG_NAME  = 'Config';
 const DASH_NAME    = 'Dashboard';
 const SPREADSHEET_ID = 'PEGAR_AQUI_EL_ID_DE_TU_SHEETS';
 
@@ -375,6 +376,7 @@ function handleReq(e) {
   try {
     const param = e.parameter &amp;&amp; e.parameter.action;
     if (param === 'getActivities') return respond(e, getActivities());
+    if (param === 'getConfig')     return respond(e, getConfig());
     let data;
     if (e.parameter &amp;&amp; e.parameter.data) {
       data = JSON.parse(e.parameter.data);
@@ -383,6 +385,8 @@ function handleReq(e) {
     } else {
       return respond(e, {status:'activo', mensaje:'Apps Script v3 activo'});
     }
+    if (data.action === 'getConfig')      return respond(e, getConfig());
+    if (data.action === 'saveConfig')     return respond(e, saveConfig(data.data));
     if (data.action === 'addActivity')    return respond(e, addActivity(data.data));
     if (data.action === 'editActivity')   return respond(e, editActivity(data.data));
     if (data.action === 'deleteActivity') return respond(e, deleteActivity(data.data));
@@ -484,6 +488,67 @@ function deleteActivity(d) {
     }
   }
   return {status:'error', mensaje:'ID no encontrado: '+buscarId};
+}
+
+
+// ── CONFIGURACIÓN COMPARTIDA ──────────────────────────────────────────
+function getOrCreateConfigSheet() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sh = ss.getSheetByName(CONFIG_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(CONFIG_NAME);
+    sh.getRange('A1').setValue('clave');
+    sh.getRange('B1').setValue('valor');
+    sh.getRange('A1:B1').setBackground('#1a5c1a').setFontColor('#fff').setFontWeight('bold');
+    const defaults = [
+      ['miembros',    '[]'],
+      ['tipos',       JSON.stringify(['Proyectos','Incidencias','Urgencias','Mejoras internas','Soporte','Coordinaciones','Reuniones','Monitoreo','Seguridad TI','QA Validación','Capacitación','Investigación o análisis'])],
+      ['plataformas', JSON.stringify(['Infraestructura','Base de datos','Seguridad'])],
+      ['cats',        JSON.stringify(['Proyectos','Incidencias','Urgencias','Mejoras internas'])],
+    ];
+    defaults.forEach((row, i) =&gt; sh.getRange(i+2, 1, 1, 2).setValues([row]));
+  }
+  return sh;
+}
+
+function getConfig() {
+  try {
+    const sh = getOrCreateConfigSheet();
+    const data = sh.getDataRange().getValues();
+    const cfg = {};
+    for (let i = 1; i &lt; data.length; i++) {
+      const key = String(data[i][0] || '').trim();
+      const val = String(data[i][1] || '').trim();
+      if (!key) continue;
+      try { cfg[key] = JSON.parse(val); } catch(e) { cfg[key] = val; }
+    }
+    return { status: 'ok', config: cfg };
+  } catch(e) {
+    return { status: 'error', mensaje: e.toString() };
+  }
+}
+
+function saveConfig(d) {
+  try {
+    const sh = getOrCreateConfigSheet();
+    const keys = ['miembros', 'tipos', 'plataformas', 'cats'];
+    const data = sh.getDataRange().getValues();
+    keys.forEach(key =&gt; {
+      if (d[key] === undefined) return;
+      const val = JSON.stringify(d[key]);
+      let found = false;
+      for (let i = 1; i &lt; data.length; i++) {
+        if (String(data[i][0]).trim() === key) {
+          sh.getRange(i + 1, 2).setValue(val);
+          found = true; break;
+        }
+      }
+      if (!found) sh.appendRow([key, val]);
+    });
+    return { status: 'ok' };
+  } catch(e) {
+    return { status: 'error', mensaje: e.toString() };
+  }
 }
 
 // ── DASHBOARD DINÁMICO ────────────────────────────────────────
@@ -809,6 +874,58 @@ const ini=n=>(n||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();
 const tm=t=>TM[t]||{icon:"📌",bg:"rgba(107,99,98,.12)",ac:"#6b6962"};
 function save(){try{localStorage.setItem("pdti3",JSON.stringify(S));}catch(e){}}
 function load(){try{const d=localStorage.getItem("pdti3");if(d)S={...S,...JSON.parse(d)};}catch(e){}}
+
+// ── Sincronizar configuración con Sheets ──────────────────────────
+function syncConfig(){
+  if(!S.url)return;
+  const payload={action:"saveConfig",data:{
+    miembros:S.miembros,
+    tipos:S.tipos,
+    plataformas:S.plataformas,
+    cats:S.cats
+  }};
+  const cbName="cfg_"+Date.now();
+  window[cbName]=function(r){
+    try{delete window[cbName];}catch(e){}
+    const s=document.getElementById("jsonp_"+cbName);if(s&&s.parentNode)s.parentNode.removeChild(s);
+    if(r&&r.status==="ok"){setSy("ok","Configuración sincronizada ✓");}
+    else {setSy("warn","Config guardada local, error en Sheets: "+(r&&r.mensaje||""));}
+  };
+  const script=document.createElement("script");
+  script.id="jsonp_"+cbName;
+  script.src=S.url+"?"+new URLSearchParams({callback:cbName,data:JSON.stringify(payload)}).toString();
+  script.onerror=()=>{try{delete window[cbName];}catch(e){}};
+  document.head.appendChild(script);
+}
+
+function loadConfig(onDone){
+  if(!S.url){if(onDone)onDone();return;}
+  const cbName="lcfg_"+Date.now();
+  const timeout=setTimeout(()=>{
+    try{delete window[cbName];}catch(e){}
+    if(onDone)onDone();
+  },10000);
+  window[cbName]=function(resp){
+    clearTimeout(timeout);
+    try{delete window[cbName];}catch(e){}
+    const s=document.getElementById("jsonp_"+cbName);if(s&&s.parentNode)s.parentNode.removeChild(s);
+    if(resp&&resp.status==="ok"&&resp.config){
+      const cfg=resp.config;
+      if(Array.isArray(cfg.miembros)   &&cfg.miembros.length)   S.miembros=cfg.miembros;
+      if(Array.isArray(cfg.tipos)      &&cfg.tipos.length)      S.tipos=cfg.tipos;
+      if(Array.isArray(cfg.plataformas)&&cfg.plataformas.length) S.plataformas=cfg.plataformas;
+      if(Array.isArray(cfg.cats)       &&cfg.cats.length)       S.cats=cfg.cats;
+      save();
+      renderCfg();popSels();renderDash();
+    }
+    if(onDone)onDone();
+  };
+  const script=document.createElement("script");
+  script.id="jsonp_"+cbName;
+  script.src=S.url+"?"+new URLSearchParams({callback:cbName,action:"getConfig"}).toString();
+  script.onerror=()=>{clearTimeout(timeout);try{delete window[cbName];}catch(e){}if(onDone)onDone();};
+  document.head.appendChild(script);
+}
 function hoy(){return new Date().toISOString().split("T")[0];}
 function desde(f){const h=new Date();if(f==="hoy")return hoy();if(f==="semana"){const d=new Date(h);d.setDate(d.getDate()-7);return d.toISOString().split("T")[0];}if(f==="mes"){const d=new Date(h.getFullYear(),h.getMonth(),1);return d.toISOString().split("T")[0];}return null;}
 function pass(a,f,pid="",tipo=""){if(pid&&a.personaId!=pid)return false;if(tipo&&a.tipo!==tipo)return false;const d=desde(f);if(!d)return true;if(f==="hoy")return a.fecha===d;return a.fecha>=d;}
@@ -1233,15 +1350,15 @@ function renderCfg(){
   document.getElementById("proylist").innerHTML=S.plataformas.map(p=>`<span class="tag">${p}<button class="tdl" onclick="delProy('${p}')">✕</button></span>`).join("");
   if(S.url)document.getElementById("surl").value=S.url;
 }
-function addM(){const n=document.getElementById("nmn").value.trim(),c=document.getElementById("nmc").value.trim();if(!n){toast("Escribe el nombre","error");return;}const mx=S.miembros.reduce((m,x)=>Math.max(m,x.id),0);S.miembros.push({id:mx+1,nombre:n,cargo:c||"Equipo TI"});document.getElementById("nmn").value="";document.getElementById("nmc").value="";save();renderCfg();popSels();toast("Integrante agregado ✓");}
-function delM(id){S.miembros=S.miembros.filter(m=>m.id!==id);save();renderCfg();popSels();}
-function addTipo(){const t=document.getElementById("ntipo").value.trim();if(!t||S.tipos.includes(t)){toast("Tipo inválido","error");return;}S.tipos.push(t);document.getElementById("ntipo").value="";save();renderCfg();popSels();toast("Tipo agregado ✓");}
-function delTipo(t){S.tipos=S.tipos.filter(x=>x!==t);save();renderCfg();popSels();}
-function addCat(){const c=document.getElementById("ncat").value.trim();if(!c||S.cats.includes(c)){toast("Categoría inválida","error");return;}S.cats.push(c);document.getElementById("ncat").value="";save();renderCfg();renderDash();toast("Categoría agregada ✓");}
-function delCat(c){S.cats=S.cats.filter(x=>x!==c);save();renderCfg();renderDash();}
-function addProy(){const p=document.getElementById("nproy").value.trim();if(!p||S.plataformas.includes(p)){toast("Plataforma inválida","error");return;}S.plataformas.push(p);document.getElementById("nproy").value="";save();renderCfg();popSels();toast("Plataforma agregada ✓");}
-function delProy(p){S.plataformas=S.plataformas.filter(x=>x!==p);save();renderCfg();popSels();}
-function saveCfg(){const u=document.getElementById("surl").value.trim();S.url=u;save();toast("Configuración guardada ✓");}
+function addM(){const n=document.getElementById("nmn").value.trim(),c=document.getElementById("nmc").value.trim();if(!n){toast("Escribe el nombre","error");return;}const mx=S.miembros.reduce((m,x)=>Math.max(m,x.id),0);S.miembros.push({id:mx+1,nombre:n,cargo:c||"Equipo TI"});document.getElementById("nmn").value="";document.getElementById("nmc").value="";save();syncConfig();renderCfg();popSels();toast("Integrante agregado ✓");}
+function delM(id){S.miembros=S.miembros.filter(m=>m.id!==id);save();syncConfig();renderCfg();popSels();}
+function addTipo(){const t=document.getElementById("ntipo").value.trim();if(!t||S.tipos.includes(t)){toast("Tipo inválido","error");return;}S.tipos.push(t);document.getElementById("ntipo").value="";save();syncConfig();renderCfg();popSels();toast("Tipo agregado ✓");}
+function delTipo(t){S.tipos=S.tipos.filter(x=>x!==t);save();syncConfig();renderCfg();popSels();}
+function addCat(){const c=document.getElementById("ncat").value.trim();if(!c||S.cats.includes(c)){toast("Categoría inválida","error");return;}S.cats.push(c);document.getElementById("ncat").value="";save();syncConfig();renderCfg();renderDash();toast("Categoría agregada ✓");}
+function delCat(c){S.cats=S.cats.filter(x=>x!==c);save();syncConfig();renderCfg();renderDash();}
+function addProy(){const p=document.getElementById("nproy").value.trim();if(!p||S.plataformas.includes(p)){toast("Plataforma inválida","error");return;}S.plataformas.push(p);document.getElementById("nproy").value="";save();syncConfig();renderCfg();popSels();toast("Plataforma agregada ✓");}
+function delProy(p){S.plataformas=S.plataformas.filter(x=>x!==p);save();syncConfig();renderCfg();popSels();}
+function saveCfg(){const u=document.getElementById("surl").value.trim();S.url=u;save();toast("Configuración guardada ✓");if(u){loadConfig(()=>{loadFromSheets(()=>renderAll());});syncConfig();}}
 
 // ── MODALS ──
 function showM(id){document.getElementById(id).classList.add("show");if(id==="mact"){
@@ -1394,14 +1511,81 @@ document.addEventListener("DOMContentLoaded",()=>{
   load();
   document.getElementById("dchip").textContent=new Date().toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"});
   popSels();
-  // Siempre cargar desde Sheets si hay URL configurada
-  loadFromSheets(()=>renderAll());
-  if(!S.url){
-    // Sin URL: mostrar vacío limpio (sin datos demo)
+  if(S.url){
+    // 1) Cargar config compartida (miembros, tipos, etc.) → luego actividades
+    loadConfig(()=>{
+      loadFromSheets(()=>renderAll());
+    });
+  } else {
     S.acts=[];save();
     renderAll();
   }
 });
+</script>
+
+
+<!-- ── Auto-refresh: detecta cambios en GitHub y recarga automáticamente ── -->
+<script>
+(function(){
+  const FILE_URL = 'https://javier-one.github.io/Sistema-de-registro-y-seguimiento-de-actividades/index.html';
+  const INTERVAL = 30 * 1000; // Verificar cada 30 segundos
+  let currentETag = null;
+  let paused = false;
+
+  // Pausar si el usuario tiene un modal abierto o está escribiendo
+  function isUserBusy(){
+    // Hay algún modal visible
+    const modalOpen = !!document.querySelector('.modal.show, .mdl.show, [id^="m"][style*="flex"], [id^="m"][style*="block"]');
+    // Hay un input con foco
+    const inputFocused = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+    return modalOpen || inputFocused;
+  }
+
+  async function checkVersion(){
+    if(paused) return;
+    try{
+      const res = await fetch(FILE_URL, {
+        method: 'HEAD',
+        cache: 'no-store',
+        headers: {'Cache-Control': 'no-cache, no-store'}
+      });
+      if(!res.ok) return;
+
+      // Usar ETag o Last-Modified como token de versión
+      const token = res.headers.get('etag') || res.headers.get('last-modified');
+      if(!token) return;
+
+      if(currentETag === null){
+        currentETag = token; // Primera lectura: guardar referencia
+        return;
+      }
+
+      if(token !== currentETag){
+        currentETag = token;
+        if(isUserBusy()){
+          // Esperar a que el usuario termine y reintentar
+          setTimeout(()=>{ if(!isUserBusy()) window.location.reload(); }, 3000);
+        } else {
+          window.location.reload();
+        }
+      }
+    } catch(e){
+      // Sin conexión — ignorar silenciosamente
+    }
+  }
+
+  // Empezar a verificar después de 10s para no interferir con la carga inicial
+  setTimeout(()=>{
+    checkVersion();
+    setInterval(checkVersion, INTERVAL);
+  }, 10000);
+
+  // Pausar si la pestaña no está visible (ahorro de recursos)
+  document.addEventListener('visibilitychange', ()=>{
+    paused = document.hidden;
+    if(!paused) checkVersion(); // Al volver a la pestaña, verificar inmediatamente
+  });
+})();
 </script>
 </body>
 </html>
