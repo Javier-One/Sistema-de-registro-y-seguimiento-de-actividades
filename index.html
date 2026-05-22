@@ -12,7 +12,7 @@ body{font-family:"Sora",sans-serif;background:var(--bg);color:var(--tx);font-siz
 /* TOPBAR */
 .tb{background:#181f18;border-bottom:2px solid var(--g);padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-shrink:0}
 .tb-l{display:flex;align-items:center;gap:18px}
-.logo{height:26px;border-radius:5px;background:#fff;padding:3px 8px;display:block}
+.logo{height:26px;border-radius:6px;background:#fff;padding:4px 10px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .tdv{width:1px;height:22px;background:rgba(255,255,255,.14)}
 .sys{font-size:11px;font-weight:500;color:rgba(255,255,255,.45);letter-spacing:.06em;text-transform:uppercase}
 .ntabs{display:flex;gap:2px}
@@ -159,7 +159,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
 /* FOOTER */
 .ft{background:var(--bg2);border-top:1px solid var(--bd);padding:7px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .ftb{font-size:10px;color:var(--hi);letter-spacing:.04em;display:flex;align-items:center;gap:7px}
-.ftl{height:11px;opacity:.3;filter:grayscale(1)}
+.ftl{height:20px;border-radius:4px;background:#fff;padding:2px 6px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .ftv{font-size:10px;color:var(--hi);font-family:var(--mo)}
 .fi2{animation:fu .3s ease both}
 @keyframes fu{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -208,11 +208,14 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
 <main class="cnt">
 
 <!-- DASHBOARD -->
-<div class="view active" id="view-dash">
+<div class="view active" id="view-dash" style="position:relative">
+  <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-18deg);pointer-events:none;z-index:0;opacity:0.045;width:480px;max-width:80vw">
+    <img id="wmimg" style="width:100%;filter:grayscale(1)" alt="">
+  </div>
   <div class="ph fi2">
     <div><div class="pt">Dashboard general</div><div class="ps">Distribución de carga — Equipo TI PagoDirecto</div></div>
     <div class="pa">
-      <button class="btn btn-sm" onclick="exportCSV()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 10v3a1 1 0 001 1h10a1 1 0 001-1v-3M8 2v8M5 7l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>Exportar CSV</button>
+      
       <button class="btn btn-sm btn-p" onclick="showM('mact')">+ Nueva actividad</button>
     </div>
   </div>
@@ -436,6 +439,11 @@ function addActivity(d) {
     d.observaciones || '', // H: Observaciones
     d.proyecto      || ''  // I: Proyecto/Plataforma
   ]);
+  // Centrar la fila recién agregada
+  try {
+    const nr = sheet.getLastRow();
+    sheet.getRange(nr, 1, 1, 9).setHorizontalAlignment('center');
+  } catch(e) {}
   try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
   return {status:'ok', id: newId};
 }
@@ -558,7 +566,7 @@ function rebuildDashboard() {
   row++;
 
   // Headers
-  const personaHeaders = ['Persona', 'Cargo', 'Total Horas', 'Actividades'].concat(
+  const personaHeaders = ['👤 Persona', '💼 Cargo', '⏱ Total Horas', '# Actividades'].concat(
     tipos.map(t =&gt; t.length &gt; 18 ? t.substring(0,16)+'…' : t)
   );
   const hRange = dash.getRange(row, 1, 1, personaHeaders.length);
@@ -574,17 +582,19 @@ function rebuildDashboard() {
   personas.forEach(([nombre, d], idx) =&gt; {
     const tipoVals = tipos.map(t =&gt; {
       const h = d.porTipo[t]||0;
-      return h &gt; 0 ? parseFloat(h.toFixed(1)) : 0;
+      return h &gt; 0 ? Math.round(h) : 0;
     });
-    const rowData = [nombre, d.cargo, parseFloat(d.horas.toFixed(1)), d.acts].concat(tipoVals);
+    const horasInt = Math.round(d.horas);
+    const rowData = [nombre, d.cargo, horasInt, d.acts].concat(tipoVals);
     const rng = dash.getRange(row, 1, 1, rowData.length);
     rng.setValues([rowData])
        .setBackground(idx % 2 === 0 ? WHITE : GRIS)
        .setFontSize(10);
-    // Negrita nombre
+    // Negrita nombre, centrar números
     dash.getRange(row, 1).setFontWeight('bold');
-    // Color total horas
-    dash.getRange(row, 3).setFontColor(VERDE_OSCURO).setFontWeight('bold');
+    dash.getRange(row, 3).setFontColor(VERDE_OSCURO).setFontWeight('bold').setHorizontalAlignment('center');
+    dash.getRange(row, 4).setHorizontalAlignment('center');
+    if(tipoVals.length&gt;0) dash.getRange(row, 5, 1, tipoVals.length).setHorizontalAlignment('center');
     row++;
   });
 
@@ -593,8 +603,8 @@ function rebuildDashboard() {
     const totalHoras = personas.reduce((s,[,d])=&gt;s+d.horas,0);
     const totalActs  = personas.reduce((s,[,d])=&gt;s+d.acts,0);
     const totalTipos = tipos.map(t =&gt; personas.reduce((s,[,d])=&gt;s+(d.porTipo[t]||0),0));
-    const totalRow   = ['TOTAL EQUIPO', '', parseFloat(totalHoras.toFixed(1)), totalActs]
-                       .concat(totalTipos.map(v=&gt;parseFloat(v.toFixed(1))));
+    const totalRow   = ['TOTAL EQUIPO', '', Math.round(totalHoras), totalActs]
+                       .concat(totalTipos.map(v=&gt;Math.round(v)));
     dash.getRange(row, 1, 1, totalRow.length)
         .setValues([totalRow])
         .setBackground(VERDE_CLARO)
@@ -614,7 +624,7 @@ function rebuildDashboard() {
       .setFontSize(11);
   row++;
 
-  const tipoHeaders2 = ['Tipo de Actividad', 'Total Horas', '% del Total', 'N° Actividades'];
+  const tipoHeaders2 = ['Tipo de Actividad', 'Total Horas', '% del Total', '# Actividades'];
   dash.getRange(row, 1, 1, 4)
       .setValues([tipoHeaders2])
       .setBackground('#2a5fa8')
@@ -628,9 +638,9 @@ function rebuildDashboard() {
   tipos.forEach((tipo, idx) =&gt; {
     const horasTipo = rows.filter(r=&gt;String(r[5])===tipo).reduce((s,r)=&gt;s+(parseFloat(r[6])||0),0);
     const actsTipo  = rows.filter(r=&gt;String(r[5])===tipo).length;
-    const pct       = totalHorasAll &gt; 0 ? (horasTipo/totalHorasAll*100).toFixed(1)+'%' : '0,0%';
+    const pct       = totalHorasAll &gt; 0 ? Math.round(horasTipo/totalHorasAll*100)+'%' : '0%';
     dash.getRange(row, 1, 1, 4)
-        .setValues([[tipo, parseFloat(horasTipo.toFixed(1)), pct, actsTipo]])
+        .setValues([[tipo, Math.round(horasTipo), pct, actsTipo]])
         .setBackground(idx%2===0 ? WHITE : GRIS)
         .setFontSize(10);
     row++;
@@ -660,7 +670,7 @@ function rebuildDashboard() {
         .setFontSize(11);
     row++;
     dash.getRange(row, 1, 1, 3)
-        .setValues([['Proyecto / Plataforma', 'N° Actividades', '% del Total']])
+        .setValues([['📁 Proyecto / Plataforma', '# Actividades', '% del Total']])
         .setBackground('#8a5abc')
         .setFontColor(WHITE)
         .setFontWeight('bold')
@@ -669,7 +679,7 @@ function rebuildDashboard() {
     row++;
     const totalActs = rows.length;
     proyEntries.forEach(([p, n], idx) =&gt; {
-      const pct = totalActs &gt; 0 ? (n/totalActs*100).toFixed(1)+'%' : '0,0%';
+      const pct = totalActs &gt; 0 ? Math.round(n/totalActs*100)+'%' : '0%';
       dash.getRange(row, 1, 1, 3)
           .setValues([[p, n, pct]])
           .setBackground(idx%2===0 ? WHITE : '#f3eaff')
@@ -678,6 +688,35 @@ function rebuildDashboard() {
     });
     row += 2;
   }
+
+  // ── SECCIÓN 4: LEYENDA ──────────────────────────────────────
+  row += 1;
+  dash.getRange(row, 1, 1, 6).merge()
+      .setValue('¿CÓMO LEER ESTE REPORTE?')
+      .setBackground('#37474f')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(10);
+  row++;
+
+  const leyendas = [
+    ['📋 DISTRIBUCIÓN POR PERSONA',
+     'Muestra las horas totales trabajadas por cada integrante del equipo y cómo se distribuyen por tipo de actividad. Útil para identificar cargas de trabajo y especialización de cada persona.'],
+    ['📊 TOTALES POR TIPO DE ACTIVIDAD',
+     'Resume el total de horas y actividades agrupadas por categoría (Proyectos, Incidencias, Urgencias, etc.). Permite ver en qué áreas se concentra el esfuerzo del equipo.'],
+    ['📁 PROYECTOS / PLATAFORMAS',
+     'Indica cuántas actividades se realizaron sobre cada proyecto o plataforma específica. Útil para medir el foco del equipo en iniciativas concretas.'],
+    ['⚠️ NOTA IMPORTANTE',
+     'Los datos de este dashboard se actualizan automáticamente al registrar, editar o eliminar actividades desde el sistema HTML. No editar manualmente esta hoja para evitar inconsistencias.'],
+  ];
+
+  leyendas.forEach(([titulo, desc], idx) =&gt; {
+    dash.getRange(row, 1).setValue(titulo).setFontWeight('bold').setFontSize(9).setFontColor('#37474f');
+    dash.getRange(row, 2, 1, 5).merge().setValue(desc).setFontSize(9).setFontColor('#555555').setWrap(true);
+    dash.setRowHeight(row, 36);
+    dash.getRange(row, 1, 1, 6).setBackground(idx % 2 === 0 ? '#fafafa' : '#f0f4f8');
+    row++;
+  });
 
   // Nota al pie
   dash.getRange(row, 1, 1, 8).merge()
@@ -688,6 +727,14 @@ function rebuildDashboard() {
 
   // Auto-ajustar columnas
   try { dash.autoResizeColumns(1, 12); } catch(e) {}
+  // Centrar todas las celdas de datos (excepto col A y B que son texto)
+  try {
+    const lastDashRow = dash.getLastRow();
+    if(lastDashRow &gt; 1) {
+      dash.getRange(1, 3, lastDashRow, 10).setHorizontalAlignment('center');
+      dash.getRange(1, 1, lastDashRow, 2).setHorizontalAlignment('left');
+    }
+  } catch(e) {}
 
   return {status:'ok'};
 }
