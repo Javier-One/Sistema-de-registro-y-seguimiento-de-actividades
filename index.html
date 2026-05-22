@@ -298,8 +298,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
     <div class="fi"><label>Integrante</label><select id="fp"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Nombre de la actividad</label><input type="text" id="fn" placeholder="Ej: Revisión de servidores de producción"></div>
     <div class="fr"><div class="fi"><label>Fecha</label><input type="date" id="ff"></div><div class="fi"><label>Tipo</label><select id="ft2"><option value="">Seleccionar...</option></select></div></div>
-    <div class="fr"><div class="fi"><label>Hora inicio</label><input type="time" id="fini" oninput="calcH()"></div><div class="fi"><label>Hora fin</label><input type="time" id="ffin" oninput="calcH()"></div></div>
-    <div class="hc" id="hcalc"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5" stroke-linecap="round"/></svg>Duración: <strong id="hval">—</strong></div>
+    <div class="fi"><label>Cantidad de horas</label><select id="fhoras"><option value="">Seleccionar...</option><option value="1">1h</option><option value="2">2h</option><option value="4">4h</option><option value="5">5h</option><option value="6">6h</option><option value="8">Full day (8h)</option></select></div>
     <div class="oa" id="oalert">⚠ Posible solapamiento con otra actividad.</div>
     <div class="fi"><label>Proyecto / Plataforma</label><select id="fproy"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Observaciones (opcional)</label><textarea id="fobs" rows="2" placeholder="Notas adicionales..."></textarea></div>
@@ -355,11 +354,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
     <div class="sst"><div class="ssn">1</div><div class="ssb"><div class="sst2">Abrir el Google Sheets convertido (nativo, no .xlsx)</div>Debe tener el menú "Extensiones" visible en la barra superior.</div></div>
     <div class="sst"><div class="ssn">2</div><div class="ssb"><div class="sst2">Extensiones → Apps Script → borrar todo el código existente → pegar este:</div>
 <div class="scode">// ══════════════════════════════════════════════════════════════
-// APPS SCRIPT — Sistema TI PagoDirecto v3
+// APPS SCRIPT — Sistema TI PagoDirecto v4
 // Columnas del Sheets (fila 3 en adelante):
-//   A=ID  B=Fecha  C=Persona  D=Cargo  E=Actividad  F=Tipo
-//   G=HoraInicio  H=HoraFin  I=Horas  J=Tipo(dup)
-//   K=Observaciones  L=Proyecto/Plataforma
+//   A=ID  B=Fecha  C=Persona  D=Cargo  E=Actividad
+//   F=Tipo  G=Horas  H=Observaciones  I=Proyecto/Plataforma
 // ══════════════════════════════════════════════════════════════
 const SHEET_NAME   = 'Actividades';
 const DASH_NAME    = 'Dashboard';
@@ -408,23 +406,15 @@ function getActivities() {
   const sheet = getSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow &lt; 3) return {status:'ok', actividades:[]};
-  const data = sheet.getRange(3, 1, lastRow-2, 12).getValues();
+  const data = sheet.getRange(3, 1, lastRow-2, 9).getValues();
   const actividades = data.filter(r =&gt; r[0] &amp;&amp; r[4]).map(r =&gt; {
     const row = [...r];
     // Normalizar fecha
     if (row[1] instanceof Date) {
       row[1] = Utilities.formatDate(row[1], Session.getScriptTimeZone(), 'yyyy-MM-dd');
     }
-    // Normalizar horas (pueden venir como fracción decimal del día)
-    [6, 7].forEach(idx =&gt; {
-      if (row[idx] instanceof Date) {
-        const d = row[idx];
-        row[idx] = Utilities.formatDate(d, 'UTC', 'HH:mm');
-      } else if (typeof row[idx] === 'number') {
-        const mins = Math.round(row[idx] * 24 * 60);
-        row[idx] = String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins%60).padStart(2,'0');
-      }
-    });
+    // G=Horas: asegurar que sea número
+    row[6] = parseFloat(row[6]) || 0;
     return row;
   });
   return {status:'ok', actividades};
@@ -436,18 +426,15 @@ function addActivity(d) {
   const lastRow = Math.max(sheet.getLastRow(), 2);
   const newId   = lastRow - 1;
   sheet.appendRow([
-    newId,
-    d.fecha,
-    d.persona,
-    d.cargo,
-    d.actividad,
-    d.tipo,
-    d.horaInicio,
-    d.horaFin,
-    d.horas,
-    d.tipo,               // Categoría Dashboard (duplicado histórico)
-    d.observaciones || '',
-    d.proyecto      || ''
+    newId,          // A: ID
+    d.fecha,        // B: Fecha
+    d.persona,      // C: Persona
+    d.cargo,        // D: Cargo
+    d.actividad,    // E: Actividad
+    d.tipo,         // F: Tipo
+    d.horas,        // G: Horas
+    d.observaciones || '', // H: Observaciones
+    d.proyecto      || ''  // I: Proyecto/Plataforma
   ]);
   try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
   return {status:'ok', id: newId};
@@ -462,10 +449,10 @@ function editActivity(d) {
   const ids = sheet.getRange(3, 1, lastRow-2, 1).getValues();
   for (let i = 0; i &lt; ids.length; i++) {
     if (String(ids[i][0]) === buscarId) {
-      sheet.getRange(i+3, 1, 1, 12).setValues([[
+      sheet.getRange(i+3, 1, 1, 9).setValues([[
         buscarId, d.fecha, d.persona, d.cargo,
-        d.actividad, d.tipo, d.horaInicio, d.horaFin,
-        d.horas, d.tipo, d.observaciones||'', d.proyecto||''
+        d.actividad, d.tipo, d.horas,
+        d.observaciones||'', d.proyecto||''
       ]]);
       try { rebuildDashboard(); } catch(e) { Logger.log('Dashboard error: '+e); }
       return {status:'ok'};
@@ -501,7 +488,7 @@ function rebuildDashboard() {
 
   const lastRow = actSheet.getLastRow();
   const rows    = lastRow &gt;= 3
-    ? actSheet.getRange(3, 1, lastRow-2, 12).getValues().filter(r =&gt; r[0] &amp;&amp; r[4])
+    ? actSheet.getRange(3, 1, lastRow-2, 9).getValues().filter(r =&gt; r[0] &amp;&amp; r[4])
     : [];
 
   // Recopilar personas y tipos únicos del dataset
@@ -512,7 +499,7 @@ function rebuildDashboard() {
     const nombre = String(r[2]||'').trim();
     const cargo  = String(r[3]||'').trim();
     const tipo   = String(r[5]||'').trim();
-    const horas  = parseFloat(r[8])||0;
+    const horas  = parseFloat(r[6])||0;
     if (!nombre) return;
     if (!personasMap[nombre]) personasMap[nombre] = {cargo, horas:0, acts:0, porTipo:{}};
     personasMap[nombre].horas += horas;
@@ -637,9 +624,9 @@ function rebuildDashboard() {
       .setHorizontalAlignment('center');
   row++;
 
-  const totalHorasAll = rows.reduce((s,r)=&gt;s+(parseFloat(r[8])||0),0);
+  const totalHorasAll = rows.reduce((s,r)=&gt;s+(parseFloat(r[6])||0),0);
   tipos.forEach((tipo, idx) =&gt; {
-    const horasTipo = rows.filter(r=&gt;String(r[5])===tipo).reduce((s,r)=&gt;s+(parseFloat(r[8])||0),0);
+    const horasTipo = rows.filter(r=&gt;String(r[5])===tipo).reduce((s,r)=&gt;s+(parseFloat(r[6])||0),0);
     const actsTipo  = rows.filter(r=&gt;String(r[5])===tipo).length;
     const pct       = totalHorasAll &gt; 0 ? (horasTipo/totalHorasAll*100).toFixed(1)+'%' : '0,0%';
     dash.getRange(row, 1, 1, 4)
@@ -659,7 +646,7 @@ function rebuildDashboard() {
   // ── SECCIÓN 3: PROYECTOS/PLATAFORMAS ──
   const proyectos = {};
   rows.forEach(r =&gt; {
-    const p = String(r[11]||'').trim();
+    const p = String(r[8]||'').trim();
     if (p) proyectos[p] = (proyectos[p]||0) + 1;
   });
   const proyEntries = Object.entries(proyectos).sort((a,b)=&gt;b[1]-a[1]);
@@ -719,7 +706,7 @@ function scheduledMonthlyReport() {
   monthly.forEach(r =&gt; {
     const name = r[2];
     if (!byPerson[name]) byPerson[name] = {horas:0, actividades:0};
-    byPerson[name].horas      += parseFloat(r[8])||0;
+    byPerson[name].horas      += parseFloat(r[6])||0;
     byPerson[name].actividades++;
   });
   const monthName = now.toLocaleString('es', {month:'long', year:'numeric'});
@@ -754,8 +741,7 @@ function scheduledMonthlyReport() {
     <div class="fi"><label>Integrante</label><select id="ep"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Nombre de la actividad</label><input type="text" id="en" placeholder="Nombre de la actividad"></div>
     <div class="fr"><div class="fi"><label>Fecha</label><input type="date" id="ef"></div><div class="fi"><label>Tipo</label><select id="et2"><option value="">Seleccionar...</option></select></div></div>
-    <div class="fr"><div class="fi"><label>Hora inicio</label><input type="time" id="eini" oninput="calcHE()"></div><div class="fi"><label>Hora fin</label><input type="time" id="efin" oninput="calcHE()"></div></div>
-    <div class="hc" id="ehcalc"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5" stroke-linecap="round"/></svg>Duración: <strong id="ehval">—</strong></div>
+    <div class="fi"><label>Cantidad de horas</label><select id="ehoras"><option value="">Seleccionar...</option><option value="1">1h</option><option value="2">2h</option><option value="4">4h</option><option value="5">5h</option><option value="6">6h</option><option value="8">Full day (8h)</option></select></div>
     <div class="fi"><label>Proyecto / Plataforma</label><select id="eproy"><option value="">Seleccionar...</option></select></div>
     <div class="fi"><label>Observaciones (opcional)</label><textarea id="eobs" rows="2"></textarea></div>
     <div class="mda"><button class="btn" onclick="hideM('medit')">Cancelar</button><button class="btn btn-p" onclick="guardarEdit()">Guardar cambios</button></div>
@@ -913,44 +899,28 @@ function renderList(id,acts){
   const mm={};S.miembros.forEach(m=>mm[m.id]=m);
   el.innerHTML=[...acts].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(a=>{
     const m=mm[a.personaId]||{nombre:"?",cargo:"?",id:0};const t=tm(a.tipo);
-    return`<div class="ar"><div class="ai" style="background:${t.bg}">${t.icon}</div><div class="ab2"><div class="an">${a.nombre}</div><div class="am"><div class="av" style="background:${avc(m.id)};width:16px;height:16px;font-size:7px;border-radius:50%">${ini(m.nombre)}</div><span>${m.nombre}</span><span style="color:var(--bd2)">·</span><span>${a.fecha}</span><span style="color:var(--bd2)">·</span><span>${a.inicio}–${a.fin}</span><span class="bdg" style="background:${t.bg};color:${t.ac}">${a.tipo}</span>${a.proyecto?`<span class="bdg" style="background:rgba(26,95,168,.1);color:#1a5fa8">📁 ${a.proyecto}</span>`:""} ${a.obs?`<span style="color:var(--hi);font-style:italic;font-size:11px">${a.obs}</span>`:""}</div></div><div class="ari"><span class="ah">${a.horas}h</span><div class="aac"><button class="abtn" onclick="editA(${a.id})" title="Editar" style="color:var(--bl);border-color:var(--bl)">✎</button><button class="abtn" onclick="delA(${a.id})" title="Eliminar">✕</button></div></div></div>`;
+    return`<div class="ar"><div class="ai" style="background:${t.bg}">${t.icon}</div><div class="ab2"><div class="an">${a.nombre}</div><div class="am"><div class="av" style="background:${avc(m.id)};width:16px;height:16px;font-size:7px;border-radius:50%">${ini(m.nombre)}</div><span>${m.nombre}</span><span style="color:var(--bd2)">·</span><span>${a.fecha}</span><span style="color:var(--bd2)">·</span><span>${a.horas}h</span><span class="bdg" style="background:${t.bg};color:${t.ac}">${a.tipo}</span>${a.proyecto?`<span class="bdg" style="background:rgba(26,95,168,.1);color:#1a5fa8">📁 ${a.proyecto}</span>`:""} ${a.obs?`<span style="color:var(--hi);font-style:italic;font-size:11px">${a.obs}</span>`:""}</div></div><div class="ari"><span class="ah">${a.horas}h</span><div class="aac"><button class="abtn" onclick="editA(${a.id})" title="Editar" style="color:var(--bl);border-color:var(--bl)">✎</button><button class="abtn" onclick="delA(${a.id})" title="Eliminar">✕</button></div></div></div>`;
   }).join("");
 }
 
 // ── GUARDAR ──
-function calcH(){
-  const i=document.getElementById("fini").value,f=document.getElementById("ffin").value;
-  const el=document.getElementById("hcalc"),ov=document.getElementById("oalert");
-  if(!i||!f){el.classList.remove("show");return;}
-  const[ih,im]=i.split(":").map(Number),[fh,fm]=f.split(":").map(Number);
-  const d=(fh*60+fm)-(ih*60+im);
-  if(d<=0){el.classList.remove("show");return;}
-  document.getElementById("hval").textContent=(d/60).toFixed(1)+" horas";el.classList.add("show");
-  const pid=document.getElementById("fp").value,fecha=document.getElementById("ff").value;
-  const sl=S.acts.some(a=>{if(a.personaId!=pid||a.fecha!==fecha)return false;const[ai,bi]=a.inicio.split(":").map(Number),[af,bf]=a.fin.split(":").map(Number);return(ih*60+im)<(af*60+bf)&&(fh*60+fm)>(ai*60+bi);});
-  ov.classList.toggle("show",sl);
-}
-
+// calcH reemplazado por select fhoras
+function calcH(){}
 function guardar(){
   const pid=parseInt(document.getElementById("fp").value);
   const nombre=document.getElementById("fn").value.trim();
   const fecha=document.getElementById("ff").value;
   const tipo=document.getElementById("ft2").value;
-  const inicio=document.getElementById("fini").value;
-  const fin=document.getElementById("ffin").value;
+  const horas=parseFloat(document.getElementById("fhoras").value||"0");
   const obs=document.getElementById("fobs").value.trim();
   const proyecto=document.getElementById("fproy").value;
-  if(!pid||!nombre||!fecha||!tipo||!inicio||!fin){toast("Completa todos los campos","error");return;}
-  const[ih,im]=inicio.split(":").map(Number),[fh,fm]=fin.split(":").map(Number);
-  const diff=(fh*60+fm)-(ih*60+im);
-  if(diff<=0){toast("Hora fin debe ser mayor que hora inicio","error");return;}
-  const horas=parseFloat((diff/60).toFixed(1));
+  if(!pid||!nombre||!fecha||!tipo||!horas){toast("Completa todos los campos","error");return;}
 
   if(editId!==null){
     // MODO EDICIÓN
     const idx=S.acts.findIndex(a=>a.id===editId);
     if(idx>=0){
-      S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas};
+      S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,obs,proyecto,horas};
     }
     save();hideM("mact");renderAll();
     // Enviar edición a Sheets
@@ -958,7 +928,7 @@ function guardar(){
       const m=S.miembros.find(x=>x.id===pid);
       const actObj=S.acts.find(a=>a.id===editId);
       const actId=actObj?.actId||editId;
-      const payload={action:"editActivity",data:{actId,id:actId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,horas,observaciones:obs||"",proyecto:proyecto||""}};
+      const payload={action:"editActivity",data:{actId,id:actId,fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",actividad:nombre,tipo,horas,observaciones:obs||"",proyecto:proyecto||""}};
       const cbName="edit_"+Date.now();
       window[cbName]=function(r){
         try{delete window[cbName];}catch(e){}
@@ -974,7 +944,7 @@ function guardar(){
     editId=null;
   } else {
     // MODO NUEVO
-    const act={id:S.nid++,personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas,ts:new Date().toISOString()};
+    const act={id:S.nid++,personaId:pid,nombre,fecha,tipo,obs,proyecto,horas,ts:new Date().toISOString()};
     S.acts.push(act);save();hideM("mact");renderAll();
     syncSheets(act,()=>{
       setTimeout(()=>loadFromSheets(()=>renderAll()),1500);
@@ -1026,8 +996,7 @@ function editA(id){
     document.getElementById("fn").value=a.nombre;
     document.getElementById("ff").value=a.fecha;
     document.getElementById("ft2").value=a.tipo;
-    document.getElementById("fini").value=a.inicio;
-    document.getElementById("ffin").value=a.fin;
+    document.getElementById("fhoras").value=a.horas||"";
     document.getElementById("fobs").value=a.obs||"";
     document.getElementById("fproy").value=a.proyecto||"";
     calcH();
@@ -1047,8 +1016,6 @@ function syncSheets(act,onSent){
       cargo:m?m.cargo:"",
       actividad:act.nombre,
       tipo:act.tipo,
-      horaInicio:act.inicio,
-      horaFin:act.fin,
       horas:act.horas,
       observaciones:act.obs||"",
       proyecto:act.proyecto||"",
@@ -1174,7 +1141,7 @@ function exportCSV(){
     if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}
     return String(v);
   }
-  const headers=["ID","Fecha","Persona","Cargo","Actividad","Tipo","Proyecto/Plataforma","Hora Inicio","Hora Fin","Horas","Observaciones"];
+  const headers=["ID","Fecha","Persona","Cargo","Actividad","Tipo","Proyecto/Plataforma","Horas","Observaciones"];
   const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
   const rows=[headers.map(esc).join(",")];
   [...S.acts].sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||"")).forEach((a,i)=>{
@@ -1187,8 +1154,6 @@ function exportCSV(){
       a.nombre||"",
       a.tipo||"",
       a.proyecto||"",
-      normTime(a.inicio),
-      normTime(a.fin),
       parseFloat(a.horas)||0,
       a.obs||""
     ].map(esc).join(","));
@@ -1239,9 +1204,8 @@ function showM(id){document.getElementById(id).classList.add("show");if(id==="ma
   document.getElementById("bguardar").textContent="Guardar actividad";
   document.getElementById("ff").value=hoy();
   ["fn","fobs"].forEach(x=>document.getElementById(x).value="");
-  ["fini","ffin"].forEach(x=>document.getElementById(x).value="");
-  document.getElementById("hcalc").classList.remove("show");
-  document.getElementById("oalert").classList.remove("show");
+  document.getElementById("fhoras").value="";
+
   popSels();
 }if(id==="mcfg")renderCfg();}
 function hideM(id){document.getElementById(id).classList.remove("show");}
@@ -1282,11 +1246,9 @@ function loadFromSheets(onDone){
           nombre:String(r[4]||""),
           fecha,
           tipo:String(r[5]||""),
-          inicio:(()=>{const v=r[6];if(!v)return"";if(typeof v==="string"&&v.match(/^\d{1,2}:\d{2}/))return v;if(v instanceof Date||Object.prototype.toString.call(v)==="[object Date]"){const d=new Date(v);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0");}if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}return String(v);})(),
-          fin:(()=>{const v=r[7];if(!v)return"";if(typeof v==="string"&&v.match(/^\d{1,2}:\d{2}/))return v;if(v instanceof Date||Object.prototype.toString.call(v)==="[object Date]"){const d=new Date(v);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0");}if(typeof v==="number"){const mins=Math.round(v*24*60);return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0");}return String(v);})(),
-          horas:parseFloat(r[8])||0,
-          obs:String(r[10]||""),
-          proyecto:String(r[11]||""),
+          horas:parseFloat(r[6])||0,
+          obs:String(r[7]||""),
+          proyecto:String(r[8]||""),
           ts:new Date().toISOString(),
         };
       }).filter(a=>a.nombre&&a.fecha);
@@ -1322,8 +1284,7 @@ function editA(id){
   document.getElementById("ef").value=a.fecha;
   document.getElementById("en").value=a.nombre;
   document.getElementById("eobs").value=a.obs||"";
-  document.getElementById("eini").value=a.inicio;
-  document.getElementById("efin").value=a.fin;
+  document.getElementById("ehoras").value=a.horas||"";
   // Populate selects
   const opts=S.miembros.map(m=>`<option value="${m.id}"${m.id===a.personaId?" selected":""}>${m.nombre} — ${m.cargo}</option>`).join("");
   document.getElementById("ep").innerHTML=`<option value="">Seleccionar...</option>`+opts;
@@ -1334,16 +1295,8 @@ function editA(id){
   calcHE();
   showM("medit");
 }
-function calcHE(){
-  const i=document.getElementById("eini").value,f=document.getElementById("efin").value;
-  const el=document.getElementById("ehcalc");
-  if(!i||!f){el.classList.remove("show");return;}
-  const[ih,im]=i.split(":").map(Number),[fh,fm]=f.split(":").map(Number);
-  const d=(fh*60+fm)-(ih*60+im);
-  if(d<=0){el.classList.remove("show");return;}
-  document.getElementById("ehval").textContent=(d/60).toFixed(1)+" horas";
-  el.classList.add("show");
-}
+// calcHE reemplazado por select ehoras
+function calcHE(){}
 function guardarEdit(){
   const id=parseInt(document.getElementById("eid").value);
   const sheetsRow=parseInt(document.getElementById("esheetsrow").value)||0;
@@ -1351,20 +1304,15 @@ function guardarEdit(){
   const nombre=document.getElementById("en").value.trim();
   const fecha=document.getElementById("ef").value;
   const tipo=document.getElementById("et2").value;
-  const inicio=document.getElementById("eini").value;
-  const fin=document.getElementById("efin").value;
+  const horas=parseFloat(document.getElementById("ehoras").value||"0");
   const obs=document.getElementById("eobs").value.trim();
   const proyecto=document.getElementById("eproy").value;
-  if(!pid||!nombre||!fecha||!tipo||!inicio||!fin){toast("Completa todos los campos","error");return;}
-  const[ih,im]=inicio.split(":").map(Number),[fh,fm]=fin.split(":").map(Number);
-  const diff=(fh*60+fm)-(ih*60+im);
-  if(diff<=0){toast("Hora fin debe ser mayor que hora inicio","error");return;}
-  const horas=parseFloat((diff/60).toFixed(1));
+  if(!pid||!nombre||!fecha||!tipo||!horas){toast("Completa todos los campos","error");return;}
   // Update locally
   const idx=S.acts.findIndex(a=>a.id===id);
   if(idx===-1){toast("Actividad no encontrada","error");return;}
   const m=S.miembros.find(x=>x.id===pid);
-  S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,inicio,fin,obs,proyecto,horas};
+  S.acts[idx]={...S.acts[idx],personaId:pid,nombre,fecha,tipo,obs,proyecto,horas};
   save();hideM("medit");renderAll();
   // Sync edit to Sheets
   if(S.url){
@@ -1382,7 +1330,7 @@ function guardarEdit(){
     const payload={action:"editActivity",data:{
       actId, id:actId,
       fecha,persona:m?m.nombre:"",cargo:m?m.cargo:"",
-      actividad:nombre,tipo,horaInicio:inicio,horaFin:fin,
+      actividad:nombre,tipo,
       horas,observaciones:obs,proyecto:proyecto||""
     }};
     const params=new URLSearchParams({callback:cbName,data:JSON.stringify(payload)});
