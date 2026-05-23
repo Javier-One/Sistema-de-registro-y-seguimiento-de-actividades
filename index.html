@@ -1512,9 +1512,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("dchip").textContent=new Date().toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"});
   popSels();
   if(S.url){
-    // 1) Cargar config compartida (miembros, tipos, etc.) → luego actividades
+    // 1) Cargar config compartida → luego actividades
     loadConfig(()=>{
-      loadFromSheets(()=>renderAll());
+      loadFromSheets(()=>{
+        renderAll();
+        startDataPolling(); // Iniciar polling de datos cada 5s
+      });
     });
   } else {
     S.acts=[];save();
@@ -1523,6 +1526,102 @@ document.addEventListener("DOMContentLoaded",()=>{
 });
 </script>
 
+
+<script>
+// ── Polling de datos cada 5 segundos ─────────────────────────────
+(function(){
+  let polling = false;      // Evitar llamadas solapadas
+  let pollActive = false;   // Control para pausar/reanudar
+
+  window.startDataPolling = function(){
+    if(pollActive) return;  // Ya está corriendo
+    pollActive = true;
+    schedulePoll();
+  };
+
+  function schedulePoll(){
+    if(!pollActive) return;
+    setTimeout(runPoll, 5000);
+  }
+
+  function runPoll(){
+    if(!pollActive || !S.url || polling){ schedulePoll(); return; }
+    // No actualizar si hay un modal abierto o el usuario está interactuando
+    const modalOpen = document.querySelector('.modal.show,[id^="m"].show') ||
+                      document.querySelector('#mact[style*="flex"],#medit[style*="flex"],#mcfg[style*="flex"],#msync[style*="flex"]');
+    const inputFocused = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
+    if(modalOpen || inputFocused){ schedulePoll(); return; }
+
+    polling = true;
+    const cbName = "poll_" + Date.now();
+    const timeout = setTimeout(()=>{
+      try{delete window[cbName];}catch(e){}
+      const s=document.getElementById("jsonp_"+cbName);if(s&&s.parentNode)s.parentNode.removeChild(s);
+      polling = false;
+      schedulePoll();
+    }, 8000);
+
+    window[cbName] = function(resp){
+      clearTimeout(timeout);
+      try{delete window[cbName];}catch(e){}
+      const s=document.getElementById("jsonp_"+cbName);if(s&&s.parentNode)s.parentNode.removeChild(s);
+      polling = false;
+
+      if(resp && resp.status === "ok" && Array.isArray(resp.actividades)){
+        // Comparar si los datos cambiaron antes de re-renderizar
+        const newHash = JSON.stringify(resp.actividades.map(r=>r[0]+"_"+r[4]+"_"+r[6]));
+        const oldHash = JSON.stringify(S.acts.map(a=>a.actId+"_"+a.nombre+"_"+a.horas));
+        if(newHash !== oldHash){
+          // Hay cambios — procesar igual que loadFromSheets pero sin tocar la UI innecesariamente
+          const mm={};S.miembros.forEach(m=>mm[m.nombre.toLowerCase()]=m);
+          S.acts = resp.actividades.map((r,i)=>{
+            let fecha="";
+            if(typeof r[1]==="string") fecha=r[1].split("T")[0];
+            else if(r[1]) fecha=new Date(r[1]).toISOString().split("T")[0];
+            const actId=parseInt(r[0])||i+1;
+            return {
+              id:actId, actId,
+              personaId:(()=>{const m=S.miembros.find(x=>x.nombre.toLowerCase()===(r[2]||"").toLowerCase());return m?m.id:0;})(),
+              nombre:String(r[4]||""), fecha,
+              tipo:String(r[5]||""),
+              horas:parseFloat(r[6])||0,
+              obs:String(r[7]||""),
+              proyecto:String(r[8]||""),
+              ts:new Date().toISOString(),
+            };
+          }).filter(a=>a.nombre&&a.fecha);
+          S.nid = Math.max(...S.acts.map(a=>a.id), 0)+1;
+          save();
+          renderAll(); // Solo re-renderiza si hubo cambios reales
+          document.getElementById("sytm").textContent = new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
+        }
+      }
+      schedulePoll();
+    };
+
+    const script = document.createElement("script");
+    script.id = "jsonp_" + cbName;
+    script.src = S.url + "?" + new URLSearchParams({callback:cbName, action:"getActivities"}).toString();
+    script.onerror = ()=>{
+      clearTimeout(timeout);
+      try{delete window[cbName];}catch(e){}
+      polling = false;
+      schedulePoll();
+    };
+    document.head.appendChild(script);
+  }
+
+  // Pausar cuando la pestaña no está visible
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.hidden){
+      pollActive = false;
+    } else {
+      pollActive = true;
+      schedulePoll(); // Retomar inmediatamente al volver
+    }
+  });
+})();
+</script>
 
 <!-- ── Auto-refresh: detecta cambios en GitHub y recarga automáticamente ── -->
 <script>
