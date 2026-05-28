@@ -224,8 +224,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(45,106,45,.025)}
   </div>
   <div class="syb ok" id="sybar"><div class="syd"></div><span class="syst" id="syst">Sincroniza con Google Sheets al registrar actividades</span><span class="sytm" id="sytm">—</span></div>
   <div class="fb fi2">
-    <button class="fc active" onclick="setF(this,'hoy')">Hoy</button>
-    <button class="fc" onclick="setF(this,'semana')">Esta semana</button>
+    <button class="fc" onclick="setF(this,'hoy')">Hoy</button>
+    <button class="fc active" onclick="setF(this,'semana')">Esta semana</button>
     <button class="fc" onclick="setF(this,'mes')">Este mes</button>
     <button class="fc" onclick="setF(this,'todo')">Todo</button>
     <div class="fsep"></div>
@@ -870,7 +870,7 @@ const CTC=["#2d6a2d","#1a5fa8","#c0392b","#16a34a","#7c3aed","#0d7a5f","#b7770d"
 const TM={"Proyectos":{icon:"📐",bg:"rgba(45,106,45,.1)",ac:"#2d6a2d"},"Incidencias":{icon:"🔧",bg:"rgba(26,95,168,.1)",ac:"#1a5fa8"},"Urgencias":{icon:"🚨",bg:"rgba(192,57,43,.1)",ac:"#c0392b"},"Mejoras internas":{icon:"✨",bg:"rgba(22,163,74,.1)",ac:"#16a34a"},"Soporte":{icon:"💬",bg:"rgba(124,58,237,.1)",ac:"#7c3aed"},"Coordinaciones":{icon:"🔗",bg:"rgba(13,122,95,.1)",ac:"#0d7a5f"},"Reuniones":{icon:"👥",bg:"rgba(107,99,98,.12)",ac:"#6b6962"}};
 
 let editId=null;
-let S={acts:[],miembros:[{id:1,nombre:"Abel Mechán",cargo:"Técnico TI"},{id:2,nombre:"Javier Rivera",cargo:"Técnico TI"},{id:3,nombre:"Jesús Araujo",cargo:"Técnico TI"},{id:4,nombre:"Vanessa Calderón",cargo:"Analista TI"},{id:5,nombre:"Manuel Sotelo",cargo:"Líder TI"}],tipos:["Proyectos","Incidencias","Urgencias","Mejoras internas","Soporte","Coordinaciones","Reuniones"],cats:["Proyectos","Incidencias","Urgencias","Mejoras internas"],plataformas:["Web","Mobile","Infraestructura","Base de datos","Seguridad","Interno"],url:"",f:"hoy",fm:"hoy",fe:"hoy",ft:"",nid:100};
+let S={acts:[],miembros:[{id:1,nombre:"Abel Mechán",cargo:"Técnico TI"},{id:2,nombre:"Javier Rivera",cargo:"Técnico TI"},{id:3,nombre:"Jesús Araujo",cargo:"Técnico TI"},{id:4,nombre:"Vanessa Calderón",cargo:"Analista TI"},{id:5,nombre:"Manuel Sotelo",cargo:"Líder TI"}],tipos:["Proyectos","Incidencias","Urgencias","Mejoras internas","Soporte","Coordinaciones","Reuniones"],cats:["Proyectos","Incidencias","Urgencias","Mejoras internas"],plataformas:["Web","Mobile","Infraestructura","Base de datos","Seguridad","Interno"],url:"",f:"semana",fm:"hoy",fe:"hoy",ft:"",nid:100};
 
 const avc=id=>AVC[(id-1)%AVC.length];
 const ini=n=>(n||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();
